@@ -2,7 +2,7 @@ import datetime
 import os
 
 import feedparser
-import google.generativeai as genai
+from google import genai
 
 OUT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "public")
 
@@ -60,11 +60,10 @@ def summarize(articles):
     for a in articles:
         article_text += f"Source: {a['source']}\nTitle: {a['title']}\nLink: {a['link']}\nSummary: {a['summary']}\n\n"
 
-    genai.configure(api_key=os.environ["GEMINI_API_KEY"])
-    model = genai.GenerativeModel("gemini-2.0-flash")
-
-    response = model.generate_content(
-        f"""You are creating a daily news digest. Below are articles from the last 24 hours across multiple sources.
+    client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
+    response = client.models.generate_content(
+        model="gemini-2.5-flash",
+        contents=f"""You are creating a daily news digest. Below are articles from the last 24 hours across multiple sources.
 
 Create a well-organized HTML digest with these sections:
 1. **Top Stories** \u2014 3-5 most important stories with brief summaries (2-3 sentences each). Include the source name.
