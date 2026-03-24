@@ -1,9 +1,8 @@
 import datetime
-import html
 import os
 
 import feedparser
-import anthropic
+import google.generativeai as genai
 
 OUT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "public")
 
@@ -61,34 +60,31 @@ def summarize(articles):
     for a in articles:
         article_text += f"Source: {a['source']}\nTitle: {a['title']}\nLink: {a['link']}\nSummary: {a['summary']}\n\n"
 
-    client = anthropic.Anthropic()
-    response = client.messages.create(
-        model="claude-haiku-4-5-20251001",
-        max_tokens=4000,
-        messages=[{
-            "role": "user",
-            "content": f"""You are creating a daily news digest. Below are articles from the last 24 hours across multiple sources.
+    genai.configure(api_key=os.environ["GEMINI_API_KEY"])
+    model = genai.GenerativeModel("gemini-2.0-flash")
+
+    response = model.generate_content(
+        f"""You are creating a daily news digest. Below are articles from the last 24 hours across multiple sources.
 
 Create a well-organized HTML digest with these sections:
-1. **Top Stories** — 3-5 most important stories with brief summaries (2-3 sentences each). Include the source name.
-2. **India** — Key Indian news stories
-3. **World** — Key international stories
-4. **Tech** — Technology highlights
-5. **Quick Links** — Other noteworthy articles as a bullet list with source attribution
+1. **Top Stories** \u2014 3-5 most important stories with brief summaries (2-3 sentences each). Include the source name.
+2. **India** \u2014 Key Indian news stories
+3. **World** \u2014 Key international stories
+4. **Tech** \u2014 Technology highlights
+5. **Quick Links** \u2014 Other noteworthy articles as a bullet list with source attribution
 
 Rules:
 - For each article, make the title a clickable <a> link using the provided URL
 - Use clean semantic HTML (h2, h3, p, ul, li, a tags)
-- Do NOT include html/head/body/doctype tags — just the inner content
+- Do NOT include html/head/body/doctype tags \u2014 just the inner content
 - Keep summaries concise and informative (2-3 sentences max)
 - If a section has no relevant articles, skip it entirely
 - Add source attribution in parentheses after each item
 
 Articles:
 {article_text}"""
-        }]
     )
-    return response.content[0].text
+    return response.text
 
 
 def build_html(digest_content):
@@ -164,7 +160,7 @@ def build_html(digest_content):
         {digest_content}
     </main>
     <footer>
-        Auto-generated from priority RSS feeds using Claude AI
+        Auto-generated from priority RSS feeds using Gemini AI
     </footer>
 </body>
 </html>"""
