@@ -141,7 +141,8 @@ Create a well-organized HTML digest with these sections in order:
 
 Rules:
 - Make every article title a clickable <a> link using the provided URL
-- Use clean semantic HTML (h2, h3, p, ul, li, a, strong tags)
+- Wrap source attributions in <span class="source">, e.g. <span class="source">(The Hindu)</span>
+- Use clean semantic HTML (h2, h3, p, ul, li, a, strong, span tags)
 - Do NOT include html/head/body/doctype tags — just the inner content
 - Do NOT repeat the same story across sections
 - Prioritize stories with real-world impact over celebrity/entertainment news
@@ -213,6 +214,7 @@ def build_html(digest_content, articles):
         ul {{ padding-left: 1.25rem; margin: 0.5rem 0; }}
         li {{ margin: 0.4rem 0; font-size: 0.95rem; color: #bbb; }}
         strong {{ color: #e0e0e0; }}
+        .source {{ color: #5a9a7a; font-size: 0.85em; }}
         footer {{
             margin-top: 3rem;
             padding-top: 1rem;
