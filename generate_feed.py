@@ -210,14 +210,13 @@ def build_index(base_url, category_feeds):
     * {{ margin: 0; padding: 0; box-sizing: border-box; }}
     body {{
       font-family: 'Inter', system-ui, -apple-system, sans-serif;
-      color: #1a1a1a;
+      color: #e0e0e0;
       line-height: 1.6;
-      background: #f7f5f2;
+      background: #000;
     }}
 
     .hero {{
-      background: #1a1a1a;
-      color: #f7f5f2;
+      background: #111;
       padding: 3rem 1.5rem 2.5rem;
       text-align: center;
     }}
@@ -267,7 +266,7 @@ def build_index(base_url, category_feeds):
     .section-header h2 {{
       font-size: 1.15rem;
       font-weight: 700;
-      color: #1a1a1a;
+      color: #f0f0f0;
     }}
     .feed-grid {{
       display: grid;
@@ -275,15 +274,15 @@ def build_index(base_url, category_feeds):
       gap: 0.5rem;
     }}
     .feed-card {{
-      background: white;
-      border: 1px solid #e5e2de;
+      background: #111;
+      border: 1px solid #2a2a2a;
       border-radius: 8px;
       padding: 0.9rem 1.1rem;
       transition: border-color 0.15s, box-shadow 0.15s;
     }}
     .feed-card:hover {{
-      border-color: #ccc;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+      border-color: #444;
+      box-shadow: 0 2px 8px rgba(255,255,255,0.04);
     }}
     .feed-card h3 {{
       font-size: 0.95rem;
@@ -292,7 +291,7 @@ def build_index(base_url, category_feeds):
     }}
     .feed-card .desc {{
       font-size: 0.82rem;
-      color: #666;
+      color: #888;
       margin-bottom: 0.5rem;
     }}
     .feed-card .feed-links {{
@@ -306,18 +305,18 @@ def build_index(base_url, category_feeds):
       gap: 0.3rem;
       font-size: 0.78rem;
       padding: 0.25rem 0.6rem;
-      background: #f7f5f2;
-      border: 1px solid #e5e2de;
+      background: #1a1a1a;
+      border: 1px solid #333;
       border-radius: 5px;
-      color: #1a1a1a;
+      color: #ccc;
       text-decoration: none;
       font-family: 'SF Mono', 'Fira Code', monospace;
       transition: background 0.15s, border-color 0.15s;
       cursor: pointer;
     }}
     .feed-card .feed-links a:hover {{
-      background: #eee;
-      border-color: #ccc;
+      background: #222;
+      border-color: #555;
     }}
     .feed-card .feed-links a .rss-icon {{
       color: #e8734a;
@@ -334,7 +333,7 @@ def build_index(base_url, category_feeds):
       padding: 0.3rem 0;
     }}
     .wire-categories summary:hover {{
-      color: #666;
+      color: #aaa;
     }}
     .wire-categories ul {{
       list-style: none;
@@ -350,13 +349,14 @@ def build_index(base_url, category_feeds):
     .how-to {{
       margin-top: 2.5rem;
       padding: 1.5rem;
-      background: white;
-      border: 1px solid #e5e2de;
+      background: #111;
+      border: 1px solid #2a2a2a;
       border-radius: 8px;
     }}
     .how-to h2 {{
       font-size: 1rem;
       font-weight: 700;
+      color: #f0f0f0;
       margin-bottom: 0.8rem;
     }}
     .how-to ol {{
@@ -364,11 +364,11 @@ def build_index(base_url, category_feeds):
     }}
     .how-to li {{
       font-size: 0.88rem;
-      color: #444;
+      color: #aaa;
       margin-bottom: 0.4rem;
     }}
     .how-to code {{
-      background: #f7f5f2;
+      background: #1a1a1a;
       padding: 1px 5px;
       border-radius: 3px;
       font-size: 0.82em;
@@ -377,9 +377,9 @@ def build_index(base_url, category_feeds):
     footer {{
       margin-top: 2.5rem;
       padding: 1.5rem 0;
-      border-top: 1px solid #e5e2de;
+      border-top: 1px solid #2a2a2a;
       text-align: center;
-      color: #999;
+      color: #666;
       font-size: 0.82rem;
     }}
     footer a {{
@@ -387,7 +387,7 @@ def build_index(base_url, category_feeds):
       text-decoration: none;
     }}
     footer a:hover {{
-      color: #1a1a1a;
+      color: #e0e0e0;
     }}
 
     @media (max-width: 500px) {{
