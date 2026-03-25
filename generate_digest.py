@@ -52,25 +52,32 @@ def extract_links_from_html(html_content):
 
 
 def decode_tracking_url(url):
+    # Skip junk links
+    if any(x in url.lower() for x in ['unsubscribe', 'mailto:', 'manage-preferences', 'email-preferences']):
+        return None
+    if 'kill-the-newsletter.com' in url:
+        return None
+
     # awstrack.me (Wire): actual URL encoded in path after /L0/
     m = re.search(r'awstrack\.me/L0/(https?[^/]+.*?)(/\d+)?$', url)
     if m:
         return urllib.parse.unquote(m.group(1))
-    # Guardian ablink: can't decode, skip
-    if 'ablink.editorial.theguardian.com' in url:
+
+    # Tracking redirects (Guardian ablink, NYT nl.nytimes, Hindu piano.io)
+    # Resolve via HEAD request to get final article URL
+    if any(domain in url for domain in ['ablink.editorial.theguardian.com', 'nl.nytimes.com/f/', 'api-esp.piano.io']):
+        try:
+            r = SESSION.head(url, allow_redirects=True, timeout=8)
+            final = r.url.split('?')[0]
+            # Only keep if it resolved to an actual article (not homepage/login)
+            if any(d in final for d in ['theguardian.com/', 'nytimes.com/', 'thehindu.com/']):
+                path = urllib.parse.urlparse(final).path
+                if path and path != '/' and len(path) > 10:
+                    return final
+        except Exception:
+            pass
         return None
-    # NYT nl.nytimes.com: can't decode, skip
-    if 'nl.nytimes.com/f/' in url:
-        return None
-    # Piano (Hindu newsletter): can't decode, skip
-    if 'api-esp.piano.io' in url:
-        return None
-    # kill-the-newsletter internal links
-    if 'kill-the-newsletter.com' in url:
-        return None
-    # Unsubscribe/tracking junk
-    if any(x in url.lower() for x in ['unsubscribe', 'mailto:', 'manage-preferences', 'email-preferences']):
-        return None
+
     return url
 
 
