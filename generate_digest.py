@@ -1,7 +1,9 @@
 import datetime
 import os
+import re
 
 import feedparser
+import requests
 from google import genai
 
 OUT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "public")
@@ -10,7 +12,6 @@ FEEDS = [
     {"name": "The Hindu - Coimbatore", "url": "https://www.thehindu.com/news/cities/Coimbatore/feeder/default.rss"},
     {"name": "Guardian", "url": "https://kill-the-newsletter.com/feeds/defau1t6a8hk8q2ifvax.xml"},
     {"name": "Boris Cherny", "url": "https://xcancel.com/bcherny/rss"},
-    {"name": "TLDR Newsletter", "url": "https://www.tldrnewsletter.com/rss"},
     {"name": "Democracy Now!", "url": "https://www.democracynow.org/democracynow.rss"},
     {"name": "Scroll Newsletter", "url": "https://athibanvasanth.github.io/indie-feeds/scroll.xml"},
     {"name": "The Wire Daily", "url": "https://kill-the-newsletter.com/feeds/wfvis6inrr7c7as08gq4.xml"},
@@ -19,8 +20,54 @@ FEEDS = [
     {"name": "The Hindu", "url": "https://kill-the-newsletter.com/feeds/5zujdzatzifucxo5t954.xml"},
 ]
 
+SESSION = requests.Session()
+SESSION.headers["User-Agent"] = "Mozilla/5.0 (compatible; indie-feeds-digest/1.0)"
 
-def fetch_articles():
+
+def fetch_tldr_articles():
+    today = datetime.date.today().isoformat()
+    url = f"https://tldr.tech/tech/{today}"
+    try:
+        r = SESSION.get(url, timeout=15)
+        r.raise_for_status()
+    except Exception as e:
+        print(f"  Failed to fetch TLDR page: {e}")
+        return []
+
+    text = r.text
+    articles = []
+    current_section = ""
+    section_pattern = r'<h3 class="text-center font-bold">(.*?)</h3>'
+    article_pattern = r'<a[^>]*href="([^"]+)"[^>]*><h3>(.*?)</h3></a>\s*<div class="newsletter-html">(.*?)</div>'
+
+    parts = re.split(r'(<h3 class="text-center font-bold">.*?</h3>)', text)
+    for part in parts:
+        sec = re.search(section_pattern, part)
+        if sec:
+            current_section = re.sub(r'<[^>]+>', '', sec.group(1)).strip()
+            current_section = current_section.replace('&amp;', '&')
+            continue
+
+        for match in re.finditer(article_pattern, part, re.DOTALL):
+            url, title, body = match.groups()
+            title = re.sub(r'<[^>]+>', '', title).strip()
+            title = title.replace('&#x27;', "'").replace('&amp;', '&')
+            body = re.sub(r'<[^>]+>', '', body).strip()
+            body = ' '.join(body.split())[:400]
+            if 'sponsor' not in title.lower() and 'utm_source=tldr' in url:
+                clean_url = url.split('?')[0]
+                articles.append({
+                    "source": f"TLDR — {current_section}",
+                    "title": title,
+                    "link": clean_url,
+                    "summary": body,
+                })
+
+    print(f"  TLDR: scraped {len(articles)} articles")
+    return articles
+
+
+def fetch_rss_articles():
     cutoff = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=24)
     all_articles = []
 
@@ -52,6 +99,12 @@ def fetch_articles():
     return all_articles
 
 
+def fetch_articles():
+    rss_articles = fetch_rss_articles()
+    tldr_articles = fetch_tldr_articles()
+    return rss_articles + tldr_articles
+
+
 def summarize(articles):
     if not articles:
         return "<p>No new articles in the last 24 hours.</p>"
@@ -80,7 +133,11 @@ Create a well-organized HTML digest with these sections in order:
 
 5. **Tech** — Technology highlights (2-3 items). Same format. Skip if nothing notable.
 
-6. **Also Worth Reading** — Everything else as a compact list grouped by source. Format: source name as a bold label, then bullet points with linked titles only (no summaries).
+6. **Boris Cherny** — If there are any articles from the "Boris Cherny" source, give them their own section. Include each post with a linked title and 1-2 sentence summary. Skip if no Boris Cherny articles.
+
+7. **TLDR Highlights** — Pick the 5-8 most interesting articles from TLDR sources (source names start with "TLDR —"). For each one, include a linked headline, 1-2 sentence summary, and the TLDR sub-section in parentheses. Skip if no TLDR articles.
+
+8. **Also Worth Reading** — Everything else as a compact list grouped by source. Format: source name as a bold label, then bullet points with linked titles only (no summaries).
 
 Rules:
 - Make every article title a clickable <a> link using the provided URL
@@ -89,6 +146,7 @@ Rules:
 - Do NOT repeat the same story across sections
 - Prioritize stories with real-world impact over celebrity/entertainment news
 - If a section would have zero items, skip it entirely
+- TLDR articles may overlap with stories from other sources — prefer the original source for Top Stories/India/World/Tech, and use the TLDR version in the TLDR Highlights section
 
 Articles:
 {article_text}"""
