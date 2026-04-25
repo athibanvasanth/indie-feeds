@@ -51,12 +51,6 @@ jobs:
         env:
           BASE_URL: ${{ vars.BASE_URL }}
 
-      - name: Generate EPW feed
-        continue-on-error: true
-        run: python generate_epw_feed.py
-        env:
-          BASE_URL: ${{ vars.BASE_URL }}
-
       - name: Preserve existing digest
         continue-on-error: true
         run: |
