@@ -9,7 +9,7 @@ on:
     branches: [main]
 
 permissions:
-  contents: write
+  contents: read
   pages: write
   id-token: write
 
@@ -25,10 +25,6 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
-
-      - name: Keep workflow alive
-        if: github.event.schedule == '15 1 * * *' || github.event_name == 'workflow_dispatch'
-        uses: gautamkrishnar/keepalive-workflow@v2
 
       - uses: actions/setup-python@v5
         with:
