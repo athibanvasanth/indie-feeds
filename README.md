@@ -54,4 +54,4 @@ python generate_digest.py
 
 ## Deployment
 
-GitHub Actions runs the feed generators every 30 minutes and the daily digest once a day at 01:15 UTC (≈06:45 IST), then deploys everything to GitHub Pages via `actions/deploy-pages`.
+GitHub Actions runs the feed generators every hour and the daily digest once a day at 01:15 UTC (≈06:45 IST), then deploys everything to GitHub Pages via `actions/deploy-pages`.
