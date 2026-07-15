@@ -21,7 +21,7 @@ NEWSLETTER_FEEDS = [
 # Standard RSS feeds with individual article entries
 RSS_FEEDS = [
     {"name": "The Hindu - Coimbatore", "url": "https://www.thehindu.com/news/cities/Coimbatore/feeder/default.rss"},
-    {"name": "Boris Cherny", "url": "https://xcancel.com/bcherny/rss"},
+    {"name": "Boris Cherny", "url": "https://nitter.net/bcherny/rss"},
     {"name": "Democracy Now!", "url": "https://www.democracynow.org/democracynow.rss"},
     {"name": "Scroll Newsletter", "url": "https://athibanvasanth.github.io/indie-feeds/scroll.xml"},
     {"name": "Simon Willison", "url": "https://simonwillison.net/atom/everything/"},
@@ -29,6 +29,10 @@ RSS_FEEDS = [
 
 SESSION = requests.Session()
 SESSION.headers["User-Agent"] = "Mozilla/5.0 (compatible; indie-feeds-digest/1.0)"
+
+# Per-source fetch health, populated by the fetchers, rendered in the footer.
+# name -> {"count": items contributed, "failed": True if the feed returned nothing/errored}
+SOURCE_HEALTH = {}
 
 
 def strip_html(text):
@@ -107,8 +111,11 @@ def fetch_newsletter_content():
     all_newsletters = []
 
     for feed_info in NEWSLETTER_FEEDS:
+        name = feed_info["name"]
+        count = 0
         try:
             feed = feedparser.parse(feed_info["url"])
+            raw = len(feed.entries)
             for entry in feed.entries[:2]:
                 published = None
                 if hasattr(entry, "published_parsed") and entry.published_parsed:
@@ -144,9 +151,12 @@ def fetch_newsletter_content():
                     "content": full_text,
                     "links": link_text,
                 })
+                count += 1
                 print(f"  {feed_info['name']}: '{title}' ({len(full_text)} chars, {len(links)} links)")
+            SOURCE_HEALTH[name] = {"count": count, "failed": raw == 0}
         except Exception as e:
-            print(f"  Failed to fetch {feed_info['name']}: {e}")
+            print(f"  Failed to fetch {name}: {e}")
+            SOURCE_HEALTH[name] = {"count": count, "failed": True}
 
     return all_newsletters
 
@@ -156,9 +166,12 @@ def fetch_rss_articles():
     all_articles = []
 
     for feed_info in RSS_FEEDS:
+        name = feed_info["name"]
         count = 0
+        raw = 0
         try:
             feed = feedparser.parse(feed_info["url"])
+            raw = len(feed.entries)
             for entry in feed.entries[:10]:
                 published = None
                 if hasattr(entry, "published_parsed") and entry.published_parsed:
@@ -187,25 +200,17 @@ def fetch_rss_articles():
                         "summary": content[:1000],
                     })
                     count += 1
+            SOURCE_HEALTH[name] = {"count": count, "failed": raw == 0}
         except Exception as e:
-            print(f"  Failed to fetch {feed_info['name']}: {e}")
+            print(f"  Failed to fetch {name}: {e}")
+            SOURCE_HEALTH[name] = {"count": count, "failed": True}
         if count:
             print(f"  {feed_info['name']}: {count} articles")
 
     return all_articles
 
 
-def fetch_tldr_articles():
-    today = datetime.date.today().isoformat()
-    url = f"https://tldr.tech/tech/{today}"
-    try:
-        r = SESSION.get(url, timeout=15)
-        r.raise_for_status()
-    except Exception as e:
-        print(f"  Failed to fetch TLDR page: {e}")
-        return []
-
-    text = r.text
+def parse_tldr_page(text):
     articles = []
     current_section = ""
     section_pattern = r'<h3 class="text-center font-bold">(.*?)</h3>'
@@ -233,12 +238,34 @@ def fetch_tldr_articles():
                     "link": clean_url,
                     "summary": body,
                 })
-
-    print(f"  TLDR: scraped {len(articles)} articles")
     return articles
 
 
+def fetch_tldr_articles():
+    # TLDR publishes weekday mornings US-Eastern (~10:00 UTC); the digest cron runs at
+    # 01:15 UTC before that day's edition exists, so walk back to the latest published one.
+    today = datetime.date.today()
+    for back in range(4):
+        day = (today - datetime.timedelta(days=back)).isoformat()
+        url = f"https://tldr.tech/tech/{day}"
+        try:
+            r = SESSION.get(url, timeout=15)
+            r.raise_for_status()
+        except Exception as e:
+            print(f"  TLDR {day}: fetch failed: {e}")
+            continue
+        articles = parse_tldr_page(r.text)
+        if articles:
+            print(f"  TLDR: scraped {len(articles)} articles from {day}")
+            SOURCE_HEALTH["TLDR"] = {"count": len(articles), "failed": False}
+            return articles
+    print("  TLDR: no published edition found in last 4 days")
+    SOURCE_HEALTH["TLDR"] = {"count": 0, "failed": True}
+    return []
+
+
 def fetch_articles():
+    SOURCE_HEALTH.clear()
     print("--- Fetching newsletters (deep content) ---")
     newsletters = fetch_newsletter_content()
     print("--- Fetching RSS articles ---")
@@ -325,6 +352,18 @@ Rules:
     return response.text
 
 
+def render_health():
+    parts = []
+    for name, h in SOURCE_HEALTH.items():
+        if h["failed"]:
+            parts.append(f'<span class="hz-fail">{name} ✗</span>')
+        elif h["count"]:
+            parts.append(f'<span class="hz-ok">{name} {h["count"]}</span>')
+        else:
+            parts.append(f'<span class="hz-quiet">{name} 0</span>')
+    return " · ".join(parts)
+
+
 def build_html(digest_content, newsletters, rss_articles, tldr_articles):
     now = datetime.datetime.now(datetime.timezone.utc)
     date_str = now.strftime("%B %d, %Y")
@@ -339,6 +378,7 @@ def build_html(digest_content, newsletters, rss_articles, tldr_articles):
     if tldr_articles:
         sources.add("TLDR")
     total = len(newsletters) + len(rss_articles) + len(tldr_articles)
+    health_line = render_health()
 
     return f"""<!DOCTYPE html>
 <html lang="en">
@@ -401,6 +441,10 @@ def build_html(digest_content, newsletters, rss_articles, tldr_articles):
             color: #555;
             font-size: 0.8rem;
         }}
+        .health {{ margin-bottom: 0.6rem; line-height: 1.9; }}
+        .health .hz-ok {{ color: #5a9a7a; }}
+        .health .hz-quiet {{ color: #555; }}
+        .health .hz-fail {{ color: #d1603a; font-weight: 600; }}
         @media (max-width: 480px) {{
             body {{ padding: 1.25rem 1rem; }}
             header h1 {{ font-size: 1.5rem; }}
@@ -417,6 +461,7 @@ def build_html(digest_content, newsletters, rss_articles, tldr_articles):
         {digest_content}
     </main>
     <footer>
+        <div class="health">{health_line}</div>
         Auto-generated from priority RSS feeds using Gemini AI
     </footer>
 </body>
