@@ -364,6 +364,45 @@ def render_health():
     return " · ".join(parts)
 
 
+def slugify(title):
+    return re.sub(r"[^a-z0-9]+", "-", title.lower().replace("'", "")).strip("-")
+
+
+def split_sections(digest_content):
+    """Split Gemini's <h2>-delimited HTML into (title, slug, body, item_count) tuples."""
+    parts = re.split(r'(<h2>.*?</h2>)', digest_content, flags=re.DOTALL)
+    sections = []
+    i = 1
+    while i < len(parts) - 1:
+        title = re.sub(r'</?h2>', '', parts[i]).strip()
+        body = parts[i + 1]
+        count = len(re.findall(r'<li>|<h3>', body))
+        sections.append((title, slugify(title), body, count))
+        i += 2
+    return sections
+
+
+def render_sections(sections):
+    # first two sections (Briefing, Top Stories) open by default; rest start collapsed
+    parts = []
+    for idx, (title, slug, body, count) in enumerate(sections):
+        open_attr = " open" if idx < 2 else ""
+        badge = f'<span class="badge">{count}</span>' if count else ""
+        parts.append(f"""<details id="{slug}"{open_attr}>
+            <summary><h2>{title}{badge}</h2></summary>
+            <div class="section-body">{body}</div>
+        </details>""")
+    return "\n".join(parts)
+
+
+def render_nav_pills(sections):
+    pills = []
+    for title, slug, body, count in sections:
+        label = f"{title} ({count})" if count else title
+        pills.append(f'<a href="#{slug}">{label}</a>')
+    return "\n".join(pills)
+
+
 def build_html(digest_content, newsletters, rss_articles, tldr_articles):
     now = datetime.datetime.now(datetime.timezone.utc)
     date_str = now.strftime("%B %d, %Y")
@@ -379,6 +418,10 @@ def build_html(digest_content, newsletters, rss_articles, tldr_articles):
         sources.add("TLDR")
     total = len(newsletters) + len(rss_articles) + len(tldr_articles)
     health_line = render_health()
+
+    sections = split_sections(digest_content)
+    nav_html = render_nav_pills(sections)
+    sections_html = render_sections(sections) if sections else digest_content
 
     return f"""<!DOCTYPE html>
 <html lang="en">
@@ -400,7 +443,7 @@ def build_html(digest_content, newsletters, rss_articles, tldr_articles):
         header {{
             border-bottom: 2px solid #e8734a;
             padding-bottom: 1rem;
-            margin-bottom: 2rem;
+            margin-bottom: 1.25rem;
         }}
         header h1 {{
             font-size: 1.75rem;
@@ -418,13 +461,64 @@ def build_html(digest_content, newsletters, rss_articles, tldr_articles):
             font-size: 0.8rem;
             margin-top: 0.2rem;
         }}
+        nav {{
+            position: sticky;
+            top: 0;
+            z-index: 10;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.4rem;
+            background: #000;
+            padding: 0.75rem 0;
+            margin-bottom: 1rem;
+            border-bottom: 1px solid #2a2a2a;
+        }}
+        nav a {{
+            display: inline-block;
+            padding: 0.3rem 0.7rem;
+            border: 1px solid #333;
+            border-radius: 999px;
+            font-size: 0.78rem;
+            color: #bbb;
+            text-decoration: none;
+            white-space: nowrap;
+        }}
+        nav a:hover {{ border-color: #e8734a; color: #e8734a; }}
+        details {{
+            border-bottom: 1px solid #1a1a1a;
+            margin-bottom: 0.25rem;
+        }}
+        summary {{
+            cursor: pointer;
+            list-style: none;
+            padding: 0.5rem 0;
+        }}
+        summary::-webkit-details-marker {{ display: none; }}
+        summary::before {{
+            content: "\u25b8";
+            display: inline-block;
+            color: #e8734a;
+            margin-right: 0.4rem;
+            transition: transform 0.15s;
+        }}
+        details[open] summary::before {{ transform: rotate(90deg); }}
+        summary h2 {{ display: inline; }}
+        .badge {{
+            display: inline-block;
+            margin-left: 0.5rem;
+            padding: 0.05rem 0.5rem;
+            border-radius: 999px;
+            background: #1a1a1a;
+            color: #888;
+            font-size: 0.72rem;
+            font-weight: 400;
+            vertical-align: middle;
+        }}
+        .section-body {{ padding: 0.25rem 0 1rem 1.3rem; }}
         h2 {{
-            font-size: 1.25rem;
+            font-size: 1.15rem;
             font-weight: 600;
             color: #e8734a;
-            margin: 2rem 0 1rem;
-            padding-bottom: 0.5rem;
-            border-bottom: 1px solid #2a2a2a;
         }}
         h3 {{ font-size: 1.05rem; font-weight: 600; margin: 1.25rem 0 0.25rem; color: #f0f0f0; }}
         p {{ margin: 0.5rem 0; color: #bbb; font-size: 0.95rem; }}
@@ -435,7 +529,7 @@ def build_html(digest_content, newsletters, rss_articles, tldr_articles):
         strong {{ color: #e0e0e0; }}
         .source {{ color: #5a9a7a; font-size: 0.85em; }}
         footer {{
-            margin-top: 3rem;
+            margin-top: 2rem;
             padding-top: 1rem;
             border-top: 1px solid #2a2a2a;
             color: #555;
@@ -448,6 +542,8 @@ def build_html(digest_content, newsletters, rss_articles, tldr_articles):
         @media (max-width: 480px) {{
             body {{ padding: 1.25rem 1rem; }}
             header h1 {{ font-size: 1.5rem; }}
+            nav {{ gap: 0.3rem; }}
+            nav a {{ font-size: 0.72rem; padding: 0.25rem 0.55rem; }}
         }}
     </style>
 </head>
@@ -457,8 +553,11 @@ def build_html(digest_content, newsletters, rss_articles, tldr_articles):
         <div class="date">{date_str} \u00b7 Generated at {ist_str}</div>
         <div class="stats">{len(newsletters)} newsletters + {len(rss_articles)} articles + {len(tldr_articles)} TLDR items from {len(sources)} sources</div>
     </header>
+    <nav>
+        {nav_html}
+    </nav>
     <main>
-        {digest_content}
+        {sections_html}
     </main>
     <footer>
         <div class="health">{health_line}</div>
