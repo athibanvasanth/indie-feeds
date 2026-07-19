@@ -299,7 +299,10 @@ def summarize(newsletters, rss_articles, tldr_articles):
 
     total = len(newsletters) + len(rss_articles) + len(tldr_articles)
 
-    client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
+    client = genai.Client(
+        api_key=os.environ["GEMINI_API_KEY"],
+        http_options=genai.types.HttpOptions(timeout=90000),  # 90s — was unbounded, caused a stuck CI run
+    )
     response = client.models.generate_content(
         model="gemini-3.5-flash",
         contents=f"""You are creating a personal daily news digest. You have been given:
