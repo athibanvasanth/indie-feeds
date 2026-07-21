@@ -23,7 +23,7 @@ RSS_FEEDS = [
     {"name": "The Hindu - Coimbatore", "url": "https://www.thehindu.com/news/cities/Coimbatore/feeder/default.rss"},
     {"name": "Boris Cherny", "url": "https://nitter.net/bcherny/rss"},
     {"name": "Democracy Now!", "url": "https://www.democracynow.org/democracynow.rss"},
-    {"name": "Scroll Newsletter", "url": "https://athibanvasanth.github.io/indie-feeds/scroll.xml"},
+    {"name": "Scroll Newsletter", "url": "https://scrollnewsletter.substack.com/feed"},
     {"name": "Simon Willison", "url": "https://simonwillison.net/atom/everything/"},
 ]
 

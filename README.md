@@ -9,7 +9,6 @@ Custom RSS feed generators for independent media sites that don't offer RSS, plu
 | Site | Strategy | Feed |
 |------|----------|------|
 | The Wire | WordPress REST API (`/wp-json/wp/v2/`) | [feed.xml](https://athibanvasanth.github.io/indie-feeds/feed.xml) |
-| Scroll Newsletter | Pinia state extraction from page source | [scroll.xml](https://athibanvasanth.github.io/indie-feeds/scroll.xml) |
 | The Caravan | JSON-LD structured data | [caravan.xml](https://athibanvasanth.github.io/indie-feeds/caravan.xml) |
 
 The Wire also generates ~50 per-category feeds (politics, rights, economy, etc.) — see the [live site](https://athibanvasanth.github.io/indie-feeds/) for the full list.
@@ -29,7 +28,6 @@ An AI-summarized digest of the day's news, generated once a day and published at
 Each generator script targets a different site using whatever structured data is available:
 
 - `generate_feed.py` — The Wire (WordPress API, fetches categories dynamically)
-- `generate_scroll_feed.py` — Scroll Newsletter (Pinia/Stck.me state extraction)
 - `generate_caravan_feed.py` — The Caravan (JSON-LD structured data)
 - `generate_digest.py` — Daily digest (newsletters + RSS + TLDR → Gemini summary)
 
@@ -42,7 +40,6 @@ pip install -r requirements.txt
 
 export BASE_URL="https://athibanvasanth.github.io/indie-feeds"
 python generate_feed.py
-python generate_scroll_feed.py
 python generate_caravan_feed.py
 
 # digest also needs a Gemini API key

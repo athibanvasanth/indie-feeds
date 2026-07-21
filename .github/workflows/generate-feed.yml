@@ -42,12 +42,6 @@ jobs:
         env:
           BASE_URL: ${{ vars.BASE_URL }}
 
-      - name: Generate Scroll feed
-        continue-on-error: true
-        run: python generate_scroll_feed.py
-        env:
-          BASE_URL: ${{ vars.BASE_URL }}
-
       - name: Generate Caravan feed
         continue-on-error: true
         run: python generate_caravan_feed.py

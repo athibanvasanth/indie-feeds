@@ -428,14 +428,6 @@ def build_index(base_url, category_feeds):
         </div>
 
         <div class="feed-card">
-          <h3>Scroll Newsletter</h3>
-          <div class="desc">Daily news briefing from Scroll.in</div>
-          <div class="feed-links">
-            <a href="scroll.xml" onclick="copyFeed(event, '{base_url}/scroll.xml')"><span class="rss-icon">&#9673;</span> scroll.xml</a>
-          </div>
-        </div>
-
-        <div class="feed-card">
           <h3>The Caravan</h3>
           <div class="desc">Long-form journalism on politics and culture</div>
           <div class="feed-links">
