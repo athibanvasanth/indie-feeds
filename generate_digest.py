@@ -106,6 +106,17 @@ def fetch_article_content(url):
         return ""
 
 
+def fetch_feed(url, timeout=15):
+    # feedparser.parse(url) makes its own request with no timeout and its own
+    # bot-signature User-Agent ("feedparser/X.Y +https://github.com/kurtmckee/...").
+    # Route through SESSION instead: browser-spoofed UA, explicit timeout, and a
+    # non-2xx now raises (caught by the existing except block) instead of silently
+    # producing an empty feed with no error anywhere in the logs.
+    resp = SESSION.get(url, timeout=timeout)
+    resp.raise_for_status()
+    return feedparser.parse(resp.content)
+
+
 def fetch_newsletter_content():
     cutoff = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=28)
     all_newsletters = []
@@ -114,7 +125,7 @@ def fetch_newsletter_content():
         name = feed_info["name"]
         count = 0
         try:
-            feed = feedparser.parse(feed_info["url"])
+            feed = fetch_feed(feed_info["url"])
             raw = len(feed.entries)
             for entry in feed.entries[:2]:
                 published = None
@@ -170,7 +181,7 @@ def fetch_rss_articles():
         count = 0
         raw = 0
         try:
-            feed = feedparser.parse(feed_info["url"])
+            feed = fetch_feed(feed_info["url"])
             raw = len(feed.entries)
             for entry in feed.entries[:10]:
                 published = None
