@@ -21,9 +21,9 @@ NEWSLETTER_FEEDS = [
 # Standard RSS feeds with individual article entries
 RSS_FEEDS = [
     {"name": "The Hindu - Coimbatore", "url": "https://www.thehindu.com/news/cities/Coimbatore/feeder/default.rss"},
-    {"name": "Boris Cherny", "url": "https://nitter.net/bcherny/rss"},
+    {"name": "Boris Cherny", "url": "https://nitter.net/bcherny/rss"},  # accepted gap: Nitter instances routinely dead/blocked
     {"name": "Democracy Now!", "url": "https://www.democracynow.org/democracynow.rss"},
-    {"name": "Scroll Newsletter", "url": "https://scrollnewsletter.substack.com/feed"},
+    {"name": "Scroll Newsletter", "url": "https://scrollnewsletter.substack.com/feed"},  # accepted gap: Substack 403s GH Actions' IP specifically (clean from a residential IP) — verified 2026-07-22, ruled out paywall (full 19KB content, no auth)
     {"name": "Simon Willison", "url": "https://simonwillison.net/atom/everything/"},
 ]
 
