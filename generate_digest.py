@@ -16,6 +16,11 @@ NEWSLETTER_FEEDS = [
     {"name": "The Wire Daily", "url": "https://kill-the-newsletter.com/feeds/wfvis6inrr7c7as08gq4.xml"},
     {"name": "NYTimes", "url": "https://kill-the-newsletter.com/feeds/975gttn5j5rzvrylr84x.xml"},
     {"name": "The Hindu Newsletter", "url": "https://kill-the-newsletter.com/feeds/5zujdzatzifucxo5t954.xml"},
+    # Scroll's Daily Brief is a multi-story newsletter, so it belongs here rather than in
+    # RSS_FEEDS. Routed through rss2json because Substack 403s GitHub Actions' IP range
+    # directly (clean from a residential IP) — rss2json fetches from its own unblocked
+    # host and hands back the same entries as JSON. fetch_feed() converts that back to RSS.
+    {"name": "Scroll Newsletter", "url": "https://api.rss2json.com/v1/api.json?rss_url=https%3A%2F%2Fscrollnewsletter.substack.com%2Ffeed"},
 ]
 
 # Standard RSS feeds with individual article entries
@@ -23,7 +28,6 @@ RSS_FEEDS = [
     {"name": "The Hindu - Coimbatore", "url": "https://www.thehindu.com/news/cities/Coimbatore/feeder/default.rss"},
     {"name": "Boris Cherny", "url": "https://nitter.net/bcherny/rss"},  # accepted gap: Nitter instances routinely dead/blocked
     {"name": "Democracy Now!", "url": "https://www.democracynow.org/democracynow.rss"},
-    {"name": "Scroll Newsletter", "url": "https://scrollnewsletter.substack.com/feed"},  # accepted gap: Substack 403s GH Actions' IP specifically (clean from a residential IP) — verified 2026-07-22, ruled out paywall (full 19KB content, no auth)
     {"name": "Simon Willison", "url": "https://simonwillison.net/atom/everything/"},
 ]
 
@@ -114,7 +118,39 @@ def fetch_feed(url, timeout=15):
     # producing an empty feed with no error anywhere in the logs.
     resp = SESSION.get(url, timeout=timeout)
     resp.raise_for_status()
+    if resp.text.lstrip()[:1] == "{":
+        return feedparser.parse(rss2json_to_rss(resp.json()))
     return feedparser.parse(resp.content)
+
+
+def rss2json_to_rss(payload):
+    # rss2json hands back parsed JSON, so rebuild minimal RSS and let feedparser take it
+    # from there — every caller downstream keeps working unchanged. Dates arrive as
+    # "YYYY-MM-DD HH:MM:SS" in UTC (verified against the native feed) and must become
+    # RFC822, or feedparser leaves published_parsed empty and the freshness cutoff
+    # silently drops every entry.
+    if payload.get("status") != "ok":
+        return ""
+
+    def rfc822(value):
+        try:
+            dt = datetime.datetime.strptime(value, "%Y-%m-%d %H:%M:%S")
+            return dt.replace(tzinfo=datetime.timezone.utc).strftime("%a, %d %b %Y %H:%M:%S GMT")
+        except (ValueError, TypeError):
+            return ""
+
+    items = []
+    for it in payload.get("items", []):
+        items.append(
+            "<item>"
+            f"<title>{html_mod.escape(it.get('title', ''))}</title>"
+            f"<link>{html_mod.escape(it.get('link', ''))}</link>"
+            f"<pubDate>{rfc822(it.get('pubDate', ''))}</pubDate>"
+            f"<description>{html_mod.escape(it.get('content') or it.get('description') or '')}</description>"
+            "</item>"
+        )
+    title = html_mod.escape((payload.get("feed") or {}).get("title", ""))
+    return f'<?xml version="1.0" encoding="utf-8"?><rss version="2.0"><channel><title>{title}</title>{"".join(items)}</channel></rss>'
 
 
 def fetch_newsletter_content():
