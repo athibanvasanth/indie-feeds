@@ -1,6 +1,8 @@
 # indie-feeds
 
-RSS feed generators for sites that don't publish one, plus a daily digest. Deployed to GitHub Pages by GitHub Actions.
+RSS feed generators for sites that don't publish one, plus a daily digest. Deployed to GitHub Pages by GitHub Actions; base URL `athibanvasanth.github.io/indie-feeds/`.
+
+Each generator uses whatever hook that site actually exposes: **The Wire** via its WordPress REST API, **Scroll Newsletter** by scraping the Pinia store, **The Caravan** from JSON-LD, **EPW** from OpenGraph meta tags.
 
 ## Traps — read before changing the workflow
 
@@ -20,7 +22,9 @@ So: no `contents: write`, no auto-commits, no `keepalive-workflow` — don't re-
 
 `generate_digest.py` pulls 5 newsletters + 4 RSS feeds + a TLDR scrape, then makes one Gemini pass into static HTML. The footer prints a per-source health line (`hz-ok` / `hz-quiet` / `hz-fail`) — a workflow run goes green even when a source silently returns zero articles, so that line is the only real signal.
 
-**Accepted failure:** `Boris Cherny ✗`. His posts are X-only and every free X→RSS route is dead or datacenter-IP-blocked. Not a bug — don't re-investigate each time.
+**Accepted failure:** `Boris Cherny ✗`. His posts are X-only and every free X→RSS route is dead or datacenter-IP-blocked — Nitter instances gated/bot-challenged/403, xcancel serves a fake "not whitelisted" entry, openrss and public RSSHub disabled, the syndication API needs a signed token. Currently on `nitter.net/bcherny/rss`, the last flagship instance serving real tweets, though it's flaky from GitHub's datacenter IPs. Not a bug — don't re-investigate each run.
+
+If it dies for good, the fallback ladder is: (1) another live Nitter instance, (2) `borischerny.com/feed.xml` — his blog, rock-stable but roughly yearly, so the digest just stays quiet, (3) self-host RSSHub on the Actual Budget GCP VM with a burner X `auth_token` cookie — the only durable free route to his daily posts, but it needs setup and cookie upkeep.
 
 **Real failure:** `Scroll Newsletter ✗`. Since `7c1f1ba` it routes through rss2json (Substack 403s GitHub Actions' IP range directly, though it's clean from a residential IP). A `✗` here means rss2json is down, rate-limiting, or changed shape — **that is a genuine regression, flag it.**
 
