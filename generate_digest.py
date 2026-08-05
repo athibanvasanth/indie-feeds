@@ -2,6 +2,7 @@ import datetime
 import html as html_mod
 import os
 import re
+import time
 import urllib.parse
 
 import feedparser
@@ -322,6 +323,29 @@ def fetch_articles():
     return newsletters, rss_articles, tldr_articles
 
 
+def generate_with_retry(client, **kwargs):
+    # Gemini 5xx killed the digest outright on 2026-08-04 (504 DEADLINE_EXCEEDED)
+    # and 2026-08-05 (503 "high demand"). There was no retry, so one bad minute
+    # lost the whole day — and because the workflow step is continue-on-error,
+    # the run still went green and the previous day's digest was re-served. The
+    # failure was invisible for two days. Retry transient 5xx/429 only; anything
+    # else (bad key, quota, malformed request) raises immediately.
+    delay = 20
+    for attempt in range(1, 5):
+        try:
+            return client.models.generate_content(**kwargs)
+        except Exception as e:
+            msg = str(e)
+            transient = any(t in msg for t in ("429", "500", "502", "503", "504",
+                                               "UNAVAILABLE", "DEADLINE_EXCEEDED",
+                                               "RESOURCE_EXHAUSTED"))
+            if attempt == 4 or not transient:
+                raise
+            print(f"  Gemini {type(e).__name__} on attempt {attempt}/4, retrying in {delay}s: {msg[:120]}")
+            time.sleep(delay)
+            delay *= 2
+
+
 def summarize(newsletters, rss_articles, tldr_articles):
     if not newsletters and not rss_articles and not tldr_articles:
         return "<p>No new articles in the last 24 hours.</p>"
@@ -350,7 +374,8 @@ def summarize(newsletters, rss_articles, tldr_articles):
         api_key=os.environ["GEMINI_API_KEY"],
         http_options=genai.types.HttpOptions(timeout=90000),  # 90s — was unbounded, caused a stuck CI run
     )
-    response = client.models.generate_content(
+    response = generate_with_retry(
+        client,
         model="gemini-3.5-flash",
         contents=f"""You are creating a personal daily news digest. You have been given:
 - {len(newsletters)} full newsletters (Guardian, NYTimes, The Wire, The Hindu) with their complete editorial content
