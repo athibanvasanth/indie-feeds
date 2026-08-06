@@ -111,17 +111,30 @@ def fetch_article_content(url):
         return ""
 
 
-def fetch_feed(url, timeout=15):
+def fetch_feed(url, timeout=15, attempts=3):
     # feedparser.parse(url) makes its own request with no timeout and its own
     # bot-signature User-Agent ("feedparser/X.Y +https://github.com/kurtmckee/...").
     # Route through SESSION instead: browser-spoofed UA, explicit timeout, and a
     # non-2xx now raises (caught by the existing except block) instead of silently
     # producing an empty feed with no error anywhere in the logs.
-    resp = SESSION.get(url, timeout=timeout)
-    resp.raise_for_status()
-    if resp.text.lstrip()[:1] == "{":
-        return feedparser.parse(rss2json_to_rss(resp.json()))
-    return feedparser.parse(resp.content)
+    #
+    # Retry added 2026-08-06: rss2json's upstream fetch of Scroll fails roughly
+    # 1 call in 10, and a single blip was turning into a hard ✗ for the day. Every
+    # feed benefits — an ordinary network wobble no longer costs a source.
+    delay = 3
+    for attempt in range(1, attempts + 1):
+        try:
+            resp = SESSION.get(url, timeout=timeout)
+            resp.raise_for_status()
+            if resp.text.lstrip()[:1] == "{":
+                return feedparser.parse(rss2json_to_rss(resp.json()))
+            return feedparser.parse(resp.content)
+        except Exception as e:
+            if attempt == attempts:
+                raise
+            print(f"    fetch attempt {attempt}/{attempts} failed ({str(e)[:90]}) — retrying in {delay}s")
+            time.sleep(delay)
+            delay *= 2
 
 
 def rss2json_to_rss(payload):
@@ -130,8 +143,13 @@ def rss2json_to_rss(payload):
     # "YYYY-MM-DD HH:MM:SS" in UTC (verified against the native feed) and must become
     # RFC822, or feedparser leaves published_parsed empty and the freshness cutoff
     # silently drops every entry.
+    # rss2json answers HTTP 200 even when ITS upstream fetch failed, putting the
+    # error in the body — so raise_for_status() never fires. Returning "" here made
+    # that a silent empty feed: no exception, nothing in the logs, just a ✗ in the
+    # health line with no explanation. Raise instead, so fetch_feed's retry sees it
+    # and a genuine outage lands in the logs with rss2json's own message.
     if payload.get("status") != "ok":
-        return ""
+        raise RuntimeError(f"rss2json returned status={payload.get('status')!r}: {str(payload.get('message'))[:120]}")
 
     def rfc822(value):
         try:
