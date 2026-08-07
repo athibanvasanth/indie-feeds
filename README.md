@@ -21,7 +21,7 @@ An AI-summarized digest of the day's news, generated once a day and published at
 - **RSS articles**: The Hindu (Coimbatore), Democracy Now!, Scroll Newsletter, Simon Willison, Boris Cherny
 - **Tech**: TLDR Tech (scraped daily)
 
-`generate_digest.py` fetches everything from the last 28 hours, decodes tracking URLs (awstrack, ablink, piano.io), and feeds it to Gemini 2.5 Flash to produce a structured HTML digest with sections for Today's Briefing, Top Stories, India, World, Tech, and more.
+`generate_digest.py` fetches everything from the last 28 hours, decodes tracking URLs (awstrack, ablink, piano.io), and feeds it to Gemini 3.5 Flash to produce a structured HTML digest with sections for Today's Briefing, Top Stories, India, World, Tech, and more.
 
 ## How It Works
 

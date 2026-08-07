@@ -36,6 +36,14 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
+      - name: Preserve existing feeds
+        continue-on-error: true
+        run: |
+          mkdir -p public
+          for f in feed.xml index.html caravan.xml; do
+            curl -sf "https://athibanvasanth.github.io/indie-feeds/$f" -o "public/$f" && echo "Preserved existing $f" || echo "No existing $f to preserve"
+          done
+
       - name: Generate Wire feeds
         continue-on-error: true
         run: python generate_feed.py

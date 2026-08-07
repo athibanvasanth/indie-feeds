@@ -1,3 +1,4 @@
+import concurrent.futures
 import datetime
 import html as html_mod
 import os
@@ -49,11 +50,23 @@ def strip_html(text):
 
 
 def extract_links_from_html(html_content):
-    links = []
+    # Only the first 15 links are ever used downstream, so dedupe and cap the
+    # candidates BEFORE decode_tracking_url — its HEAD requests are the biggest
+    # per-newsletter runtime cost.
+    seen = set()
+    candidates = []
     for match in re.finditer(r'<a[^>]*href="([^"]+)"[^>]*>(.*?)</a>', html_content, re.DOTALL):
         url, anchor = match.groups()
         url = html_mod.unescape(url)
-        anchor = strip_html(anchor).strip()
+        if url in seen:
+            continue
+        seen.add(url)
+        candidates.append((url, strip_html(anchor).strip()))
+        if len(candidates) == 15:
+            break
+
+    links = []
+    for url, anchor in candidates:
         real_url = decode_tracking_url(url)
         if real_url and anchor and len(anchor) > 5:
             links.append({"text": anchor, "url": real_url})
@@ -130,6 +143,11 @@ def fetch_feed(url, timeout=15, attempts=3):
                 return feedparser.parse(rss2json_to_rss(resp.json()))
             return feedparser.parse(resp.content)
         except Exception as e:
+            # A 4xx won't fix itself on retry — raise immediately
+            if (isinstance(e, requests.exceptions.HTTPError)
+                    and e.response is not None
+                    and 400 <= e.response.status_code < 500):
+                raise
             if attempt == attempts:
                 raise
             print(f"    fetch attempt {attempt}/{attempts} failed ({str(e)[:90]}) — retrying in {delay}s")
@@ -238,6 +256,7 @@ def fetch_rss_articles():
         try:
             feed = fetch_feed(feed_info["url"])
             raw = len(feed.entries)
+            fresh = []
             for entry in feed.entries[:10]:
                 published = None
                 if hasattr(entry, "published_parsed") and entry.published_parsed:
@@ -247,14 +266,26 @@ def fetch_rss_articles():
 
                 if published is not None and published < cutoff:
                     continue
+                fresh.append(entry)
 
+            # Fetch article bodies in parallel — the serial fetch loop was the
+            # digest's biggest runtime cost. pool.map preserves link order.
+            bodies = {}
+            links_to_fetch = list(dict.fromkeys(
+                e.get("link", "") for e in fresh
+                if e.get("link", "") and feed_info["name"] not in ("Boris Cherny",)
+            ))
+            if links_to_fetch:
+                with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
+                    for link, body in zip(links_to_fetch, pool.map(fetch_article_content, links_to_fetch)):
+                        bodies[link] = body
+
+            for entry in fresh:
                 title = entry.get("title", "Untitled")
                 link = entry.get("link", "")
                 summary = entry.get("summary", "")
-                # For RSS feeds, try to fetch actual article content
-                content = ""
-                if link and feed_info["name"] not in ("Boris Cherny",):
-                    content = fetch_article_content(link)
+                # For RSS feeds, try to use the fetched article content
+                content = bodies.get(link, "")
                 if not content:
                     content = strip_html(summary)[:800] if summary else ""
 
@@ -341,6 +372,17 @@ def fetch_articles():
     return newsletters, rss_articles, tldr_articles
 
 
+def sanitize_gemini_html(text):
+    # Gemini's output is embedded verbatim into digest.html, and newsletter content
+    # is attacker-controllable — strip anything that can execute script (stored XSS
+    # from our own Pages domain). Regex-only, no new deps.
+    text = re.sub(r'<(script|iframe|object|embed)[^>]*>.*?</\1>', '', text, flags=re.DOTALL | re.IGNORECASE)
+    text = re.sub(r'<(script|iframe|object|embed)[^>]*/?>', '', text, flags=re.IGNORECASE)
+    text = re.sub(r'\s+on\w+="[^"]*"', '', text, flags=re.IGNORECASE)
+    text = re.sub(r"\s+on\w+='[^']*'", '', text, flags=re.IGNORECASE)
+    return text
+
+
 def generate_with_retry(client, **kwargs):
     # Gemini 5xx killed the digest outright on 2026-08-04 (504 DEADLINE_EXCEEDED)
     # and 2026-08-05 (503 "high demand"). There was no retry, so one bad minute
@@ -366,7 +408,7 @@ def generate_with_retry(client, **kwargs):
 
 def summarize(newsletters, rss_articles, tldr_articles):
     if not newsletters and not rss_articles and not tldr_articles:
-        return "<p>No new articles in the last 24 hours.</p>"
+        return "<p>No new articles in the last 28 hours.</p>"
 
     # Build newsletter section — full text for the AI to read through
     newsletter_text = ""
@@ -442,7 +484,12 @@ Rules:
 === TLDR TECH ===
 {tldr_text}"""
     )
-    return response.text
+    text = response.text
+    if text is None:
+        # Gemini safety block leaves .text as None — don't crash split_sections on it
+        print("  Gemini returned no text (likely a safety block) — digest body will be empty")
+        text = ""
+    return sanitize_gemini_html(text)
 
 
 def render_health():

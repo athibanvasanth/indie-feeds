@@ -2,7 +2,7 @@
 
 RSS feed generators for sites that don't publish one, plus a daily digest. Deployed to GitHub Pages by GitHub Actions; base URL `athibanvasanth.github.io/indie-feeds/`.
 
-Each generator uses whatever hook that site actually exposes: **The Wire** via its WordPress REST API, **Scroll Newsletter** by scraping the Pinia store, **The Caravan** from JSON-LD, **EPW** from OpenGraph meta tags.
+Each generator uses whatever hook that site actually exposes: **The Wire** via its WordPress REST API, **Scroll Newsletter** via rss2json (Substack 403s GitHub Actions' IP range directly), **The Caravan** from JSON-LD.
 
 ## Traps — read before changing the workflow
 
@@ -34,3 +34,4 @@ If a *third* source starts failing, escalate regardless.
 
 - `fetch_feed()` detects a JSON body and rebuilds RSS from it via `rss2json_to_rss()`. Dates must be converted to RFC822 — feedparser leaves `published_parsed` empty otherwise, and the 28-hour freshness cutoff then silently drops every entry.
 - Scroll sits in `NEWSLETTER_FEEDS`, not `RSS_FEEDS`: its Daily Brief is multi-story and needs the full-content handler. Under `RSS_FEEDS` it gets capped at 800 chars *and* tries to fetch the article body from Substack — a second 403.
+- The kill-the-newsletter feed tokens in `generate_digest.py`'s `NEWSLETTER_FEEDS` (lines 16-19) are inherently public — public repo, public Pages site. That's a deliberate design choice, not a leak: they only gate inbox delivery, nothing sensitive rides on them.

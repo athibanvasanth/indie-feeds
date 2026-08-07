@@ -401,8 +401,8 @@ def build_index(base_url, category_feeds):
 
   <div class="hero">
     <h1>indie<span>-</span>feeds</h1>
-    <p>Custom-generated RSS feeds for independent media sites that don't offer RSS. Fresh every 30 minutes.</p>
-    <div class="badge">Updated every 30 minutes</div>
+    <p>Custom-generated RSS feeds for independent media sites that don't offer RSS. Fresh every hour.</p>
+    <div class="badge">Updated hourly</div>
   </div>
 
   <div class="container">
@@ -434,14 +434,6 @@ def build_index(base_url, category_feeds):
             <a href="caravan.xml" onclick="copyFeed(event, '{base_url}/caravan.xml')"><span class="rss-icon">&#9673;</span> caravan.xml</a>
           </div>
         </div>
-
-        <div class="feed-card">
-          <h3>Economic &amp; Political Weekly</h3>
-          <div class="desc">India's premier social science journal since 1949</div>
-          <div class="feed-links">
-            <a href="epw.xml" onclick="copyFeed(event, '{base_url}/epw.xml')"><span class="rss-icon">&#9673;</span> epw.xml</a>
-          </div>
-        </div>
       </div>
     </div>
 
@@ -457,7 +449,7 @@ def build_index(base_url, category_feeds):
     </div>
 
     <footer>
-      <p>Open source on <a href="https://github.com/athibanvasanth/indie-feeds">GitHub</a> &middot; Custom feeds update every 30 minutes via GitHub Actions</p>
+      <p>Open source on <a href="https://github.com/athibanvasanth/indie-feeds">GitHub</a> &middot; Custom feeds update hourly via GitHub Actions</p>
       <p style="margin-top:0.3rem;">Built because independent journalism deserves open distribution.</p>
     </footer>
 

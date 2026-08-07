@@ -44,6 +44,13 @@ def fetch_article_urls():
     return urls
 
 
+def is_article_node(data):
+    node_type = data.get("@type")
+    return node_type == "Article" or (
+        isinstance(node_type, list) and "Article" in node_type
+    )
+
+
 def fetch_article_meta(path):
     url = f"{CARAVAN_URL}{path}"
     try:
@@ -60,14 +67,27 @@ def fetch_article_meta(path):
         re.DOTALL,
     )
     if not ld_match:
+        print(f"    Dropping {path}: no JSON-LD block found")
         return None
 
     try:
         data = json.loads(ld_match.group(1))
     except json.JSONDecodeError:
+        print(f"    Dropping {path}: JSON-LD failed to parse")
         return None
 
-    if data.get("@type") != "Article":
+    # JSON-LD sometimes wraps its nodes in a top-level @graph array
+    if isinstance(data.get("@graph"), list):
+        data = next(
+            (n for n in data["@graph"] if isinstance(n, dict) and is_article_node(n)),
+            None,
+        )
+        if data is None:
+            print(f"    Dropping {path}: no Article node in JSON-LD @graph")
+            return None
+
+    if not is_article_node(data):
+        print(f"    Dropping {path}: JSON-LD @type is {data.get('@type')!r}, not Article")
         return None
 
     # Extract og:image as fallback (JSON-LD image sometimes missing protocol)
