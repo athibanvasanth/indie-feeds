@@ -397,7 +397,10 @@ def generate_with_retry(prompt):
     payload = {
         "model": GENERATIVE_MODEL,
         "messages": [{"role": "user", "content": prompt}],
-        "max_tokens": 8192,
+        # Reasoning models burn tokens inside the hidden reasoning phase before
+        # writing any content; 8192 was too small (finish_reason=length, empty
+        # content, all 8192 in reasoning_tokens). 32768 leaves room for both.
+        "max_tokens": 32768,
     }
     for attempt in range(1, 5):
         try:
@@ -408,7 +411,7 @@ def generate_with_retry(prompt):
                     "Authorization": f"Bearer {os.environ['OPENCODE_GO_API_KEY']}",
                     "Content-Type": "application/json",
                 },
-                timeout=90,  # 90s — was unbounded, caused a stuck CI run
+                timeout=300,  # 300s — reasoning + 32K output can take minutes; 90s timed out
             )
             r.raise_for_status()
             data = r.json()
@@ -507,8 +510,9 @@ Clarity rules (most important):
 {tldr_text}""")
     text = response
     if not text:
-        # Safety/empty response — don't crash split_sections on it
-        print("  Model returned no text (likely a safety block) — digest body will be empty")
+        # Empty response — either a safety block or the output hit max_tokens.
+        # Don't crash split_sections on it.
+        print("  Model returned no text (safety block or max_tokens cut) — digest body will be empty")
         text = ""
     return sanitize_gemini_html(text)
 
