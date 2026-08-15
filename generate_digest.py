@@ -436,7 +436,7 @@ def summarize(newsletters, rss_articles, tldr_articles):
     )
     response = generate_with_retry(
         client,
-        model="gemini-3.5-flash",
+        model="gemini-3.7-flash",
         contents=f"""You are creating a personal daily news digest. You have been given:
 - {len(newsletters)} full newsletters (Guardian, NYTimes, The Wire, The Hindu) with their complete editorial content
 - {len(rss_articles)} individual RSS articles with fetched content
