@@ -8,9 +8,12 @@ import urllib.parse
 
 import feedparser
 import requests
-from google import genai
 
 OUT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "public")
+
+# opencode-go OpenAI-compatible endpoint (DeepSeek V4 Flash — the cheapest Go model)
+GENERATIVE_ENDPOINT = "https://opencode.ai/zen/go/v1/chat/completions"
+GENERATIVE_MODEL = "deepseek-v4-flash"
 
 # Newsletters via kill-the-newsletter: full email HTML with embedded articles
 NEWSLETTER_FEEDS = [
@@ -383,17 +386,35 @@ def sanitize_gemini_html(text):
     return text
 
 
-def generate_with_retry(client, **kwargs):
-    # Gemini 5xx killed the digest outright on 2026-08-04 (504 DEADLINE_EXCEEDED)
+def generate_with_retry(prompt):
+    # The model API 5xx killed the digest outright on 2026-08-04 (504 DEADLINE_EXCEEDED)
     # and 2026-08-05 (503 "high demand"). There was no retry, so one bad minute
     # lost the whole day — and because the workflow step is continue-on-error,
     # the run still went green and the previous day's digest was re-served. The
     # failure was invisible for two days. Retry transient 5xx/429 only; anything
     # else (bad key, quota, malformed request) raises immediately.
     delay = 20
+    payload = {
+        "model": GENERATIVE_MODEL,
+        "messages": [{"role": "user", "content": prompt}],
+        "max_tokens": 8192,
+    }
     for attempt in range(1, 5):
         try:
-            return client.models.generate_content(**kwargs)
+            r = requests.post(
+                GENERATIVE_ENDPOINT,
+                json=payload,
+                headers={
+                    "Authorization": f"Bearer {os.environ['OPENCODE_GO_API_KEY']}",
+                    "Content-Type": "application/json",
+                },
+                timeout=90,  # 90s — was unbounded, caused a stuck CI run
+            )
+            r.raise_for_status()
+            data = r.json()
+            if not data.get("choices"):
+                raise RuntimeError(f"no choices in response: {str(data)[:200]}")
+            return data["choices"][0]["message"]["content"]
         except Exception as e:
             msg = str(e)
             transient = any(t in msg for t in ("429", "500", "502", "503", "504",
@@ -401,7 +422,7 @@ def generate_with_retry(client, **kwargs):
                                                "RESOURCE_EXHAUSTED"))
             if attempt == 4 or not transient:
                 raise
-            print(f"  Gemini {type(e).__name__} on attempt {attempt}/4, retrying in {delay}s: {msg[:120]}")
+            print(f"  API {type(e).__name__} on attempt {attempt}/4, retrying in {delay}s: {msg[:120]}")
             time.sleep(delay)
             delay *= 2
 
@@ -430,14 +451,7 @@ def summarize(newsletters, rss_articles, tldr_articles):
 
     total = len(newsletters) + len(rss_articles) + len(tldr_articles)
 
-    client = genai.Client(
-        api_key=os.environ["GEMINI_API_KEY"],
-        http_options=genai.types.HttpOptions(timeout=90000),  # 90s — was unbounded, caused a stuck CI run
-    )
-    response = generate_with_retry(
-        client,
-        model="gemini-3.7-flash",
-        contents=f"""You are creating a personal daily news digest. You have been given:
+    response = generate_with_retry(f"""You are creating a personal daily news digest. You have been given:
 - {len(newsletters)} full newsletters (Guardian, NYTimes, The Wire, The Hindu) with their complete editorial content
 - {len(rss_articles)} individual RSS articles with fetched content
 - {len(tldr_articles)} tech articles scraped from TLDR newsletter
@@ -490,12 +504,11 @@ Clarity rules (most important):
 {article_text}
 
 === TLDR TECH ===
-{tldr_text}"""
-    )
-    text = response.text
-    if text is None:
-        # Gemini safety block leaves .text as None — don't crash split_sections on it
-        print("  Gemini returned no text (likely a safety block) — digest body will be empty")
+{tldr_text}""")
+    text = response
+    if not text:
+        # Safety/empty response — don't crash split_sections on it
+        print("  Model returned no text (likely a safety block) — digest body will be empty")
         text = ""
     return sanitize_gemini_html(text)
 
@@ -710,7 +723,7 @@ def build_html(digest_content, newsletters, rss_articles, tldr_articles):
     </main>
     <footer>
         <div class="health">{health_line}</div>
-        Auto-generated from priority RSS feeds using Gemini AI
+        Auto-generated from priority RSS feeds using DeepSeek V4 Flash
     </footer>
 </body>
 </html>"""

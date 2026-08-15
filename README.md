@@ -42,8 +42,8 @@ export BASE_URL="https://athibanvasanth.github.io/indie-feeds"
 python generate_feed.py
 python generate_caravan_feed.py
 
-# digest also needs a Gemini API key
-export GEMINI_API_KEY="..."
+# digest also needs an opencode-go API key (DeepSeek V4 Flash)
+export OPENCODE_GO_API_KEY="..."
 python generate_digest.py
 
 # output lands in the public/ directory
