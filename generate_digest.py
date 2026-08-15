@@ -446,7 +446,7 @@ READ THROUGH EACH NEWSLETTER CAREFULLY. They contain curated editorial picks, st
 
 Create a well-organized HTML digest with these sections in order:
 
-1. **Today's Briefing** — A single paragraph (4-5 sentences) summarizing the most significant things happening today across India and the world. Write it like a friend catching you up over coffee. No bullet points, just flowing prose.
+1. **Today's Briefing** — A single paragraph (4-5 sentences) summarizing the most significant things happening today across India and the world. Write it like a friend catching you up over coffee: warm, plain language, no assumptions about prior knowledge. No bullet points, just flowing prose.
 
 2. **Top Stories** — Pick the 5-7 most important stories from ALL sources. For each one:
    - Headline (linked if URL is available)
@@ -474,6 +474,14 @@ Rules:
 - Prioritize stories with real-world impact over celebrity/entertainment
 - If a section would have zero items, skip it entirely
 - IMPORTANT: The newsletters contain MANY stories — extract all significant ones, don't just pick 2-3 from each
+
+Clarity rules (most important):
+- Write in plain, everyday language — as if explaining to an intelligent friend who doesn't follow the news closely. No jargon, no insider shorthand, no editorializing.
+- Start each summary with the single most important fact in one clear sentence, then add context. Lead with the news, not the setup.
+- Explain names, acronyms, and references on first use ("the RBI (India's central bank)" not just "the RBI").
+- State cause and effect explicitly: what happened, who did it, why it matters.
+- Use short sentences and concrete numbers/dates when available.
+- Never assume the reader already knows the story — each summary must stand on its own.
 
 === FULL NEWSLETTERS ===
 {newsletter_text}
