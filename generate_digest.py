@@ -11,9 +11,9 @@ import requests
 
 OUT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "public")
 
-# opencode-go OpenAI-compatible endpoint (DeepSeek V4 Flash — the cheapest Go model)
-GENERATIVE_ENDPOINT = "https://opencode.ai/zen/go/v1/chat/completions"
-GENERATIVE_MODEL = "deepseek-v4-flash"
+# opencode Zen — Muse Spark 1.2 Contributor Free (free tier, was DeepSeek V4 Flash)
+GENERATIVE_ENDPOINT = "https://opencode.ai/zen/v1/responses"
+GENERATIVE_MODEL = "muse-spark-1.2-contributor-free"
 
 # Newsletters via kill-the-newsletter: full email HTML with embedded articles
 NEWSLETTER_FEEDS = [
@@ -394,27 +394,50 @@ def generate_with_retry(prompt):
     # failure was invisible for two days. Retry transient 5xx/429 only; anything
     # else (bad key, quota, malformed request) raises immediately.
     delay = 20
-    payload = {
-        "model": GENERATIVE_MODEL,
-        "messages": [{"role": "user", "content": prompt}],
-        # Reasoning models burn tokens inside the hidden reasoning phase before
-        # writing any content; 8192 was too small (finish_reason=length, empty
-        # content, all 8192 in reasoning_tokens). 32768 leaves room for both.
-        "max_tokens": 32768,
-    }
+    is_responses = "responses" in GENERATIVE_ENDPOINT
+    if is_responses:
+        payload = {
+            "model": GENERATIVE_MODEL,
+            "input": prompt,
+            "max_output_tokens": 32768,
+        }
+    else:
+        payload = {
+            "model": GENERATIVE_MODEL,
+            "messages": [{"role": "user", "content": prompt}],
+            # Reasoning models burn tokens inside the hidden reasoning phase before
+            # writing any content; 8192 was too small (finish_reason=length, empty
+            # content, all 8192 in reasoning_tokens). 32768 leaves room for both.
+            "max_tokens": 32768,
+        }
     for attempt in range(1, 5):
         try:
             r = requests.post(
                 GENERATIVE_ENDPOINT,
                 json=payload,
                 headers={
-                    "Authorization": f"Bearer {os.environ['OPENCODE_GO_API_KEY']}",
+                    "Authorization": f"Bearer {os.environ.get('OPENCODE_ZEN_API_KEY') or os.environ['OPENCODE_GO_API_KEY']}",
                     "Content-Type": "application/json",
                 },
                 timeout=300,  # 300s — reasoning + 32K output can take minutes; 90s timed out
             )
             r.raise_for_status()
             data = r.json()
+            if is_responses:
+                # Responses API shapes vary: try output_text, then output[0].content[0].text
+                text = data.get("output_text")
+                if not text:
+                    try:
+                        text = data["output"][0]["content"][0]["text"]
+                    except Exception:
+                        text = None
+                if not text:
+                    # fallback for openai-compatible responses wrapped as choices
+                    if data.get("choices"):
+                        text = data["choices"][0].get("message", {}).get("content") or data["choices"][0].get("text")
+                if not text:
+                    raise RuntimeError(f"no text in responses payload: {str(data)[:400]}")
+                return text
             if not data.get("choices"):
                 raise RuntimeError(f"no choices in response: {str(data)[:200]}")
             return data["choices"][0]["message"]["content"]
@@ -727,7 +750,7 @@ def build_html(digest_content, newsletters, rss_articles, tldr_articles):
     </main>
     <footer>
         <div class="health">{health_line}</div>
-        Auto-generated from priority RSS feeds using DeepSeek V4 Flash
+        Auto-generated from priority RSS feeds using Muse Spark 1.2 (opencode Zen)
     </footer>
 </body>
 </html>"""

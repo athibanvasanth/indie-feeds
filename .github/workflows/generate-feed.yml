@@ -68,6 +68,7 @@ jobs:
         run: python generate_digest.py
         env:
           OPENCODE_GO_API_KEY: ${{ secrets.OPENCODE_GO_API_KEY }}
+          OPENCODE_ZEN_API_KEY: ${{ secrets.OPENCODE_ZEN_API_KEY }}
 
       - uses: actions/upload-pages-artifact@v4
         with:
