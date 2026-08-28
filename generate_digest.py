@@ -424,13 +424,35 @@ def generate_with_retry(prompt):
             r.raise_for_status()
             data = r.json()
             if is_responses:
-                # Responses API shapes vary: try output_text, then output[0].content[0].text
+                # Responses API shapes vary: try output_text, then scan output[] for the message.
+                # For reasoning models the first element is often type=reasoning with no text,
+                # so output[0] is empty and the actual assistant message is at output[1] or later.
                 text = data.get("output_text")
                 if not text:
-                    try:
-                        text = data["output"][0]["content"][0]["text"]
-                    except Exception:
-                        text = None
+                    for item in data.get("output", []):
+                        if not isinstance(item, dict):
+                            continue
+                        # content can be list of {text} or {type: output_text, text}
+                        content = item.get("content")
+                        if isinstance(content, list):
+                            for c in content:
+                                if isinstance(c, dict) and c.get("text"):
+                                    text = c["text"]
+                                    break
+                                if isinstance(c, str) and c.strip():
+                                    text = c
+                                    break
+                        elif isinstance(content, str) and content.strip():
+                            text = content
+                        # Some providers use "message" with direct text field
+                        if not text and item.get("text"):
+                            text = item["text"]
+                        if text:
+                            break
+                        # Also check nested output_text
+                        if not text and item.get("output_text"):
+                            text = item["output_text"]
+                            break
                 if not text:
                     # fallback for openai-compatible responses wrapped as choices
                     if data.get("choices"):
