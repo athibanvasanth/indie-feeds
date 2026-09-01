@@ -3,6 +3,7 @@ import datetime
 import html as html_mod
 import os
 import re
+import subprocess
 import time
 import urllib.parse
 
@@ -11,9 +12,10 @@ import requests
 
 OUT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "public")
 
-# opencode Zen — Muse Spark 1.2 Contributor Free (free tier, was DeepSeek V4 Flash)
-GENERATIVE_ENDPOINT = "https://opencode.ai/zen/v1/responses"
-GENERATIVE_MODEL = "muse-spark-1.2-contributor-free"
+# Claude Sonnet 5, via the Claude Code CLI in print mode — billed against the
+# user's own Claude subscription (CLAUDE_CODE_OAUTH_TOKEN), not metered API usage.
+# Was opencode Zen's free-tier Muse Spark 1.2 (before that, DeepSeek V4 Flash).
+CLAUDE_MODEL = "claude-sonnet-5"
 
 # Newsletters via kill-the-newsletter: full email HTML with embedded articles
 NEWSLETTER_FEEDS = [
@@ -376,9 +378,10 @@ def fetch_articles():
 
 
 def sanitize_gemini_html(text):
-    # Gemini's output is embedded verbatim into digest.html, and newsletter content
+    # The model's output is embedded verbatim into digest.html, and newsletter content
     # is attacker-controllable — strip anything that can execute script (stored XSS
     # from our own Pages domain). Regex-only, no new deps.
+    # (name kept as-is post-migration off Gemini — renaming risks missing a call site)
     text = re.sub(r'<(script|iframe|object|embed)[^>]*>.*?</\1>', '', text, flags=re.DOTALL | re.IGNORECASE)
     text = re.sub(r'<(script|iframe|object|embed)[^>]*/?>', '', text, flags=re.IGNORECASE)
     text = re.sub(r'\s+on\w+="[^"]*"', '', text, flags=re.IGNORECASE)
@@ -391,86 +394,42 @@ def generate_with_retry(prompt):
     # and 2026-08-05 (503 "high demand"). There was no retry, so one bad minute
     # lost the whole day — and because the workflow step is continue-on-error,
     # the run still went green and the previous day's digest was re-served. The
-    # failure was invisible for two days. Retry transient 5xx/429 only; anything
-    # else (bad key, quota, malformed request) raises immediately.
+    # failure was invisible for two days. Retry transient errors only; anything
+    # else (bad/missing auth, malformed request) raises immediately.
+    #
+    # Runs the Claude Code CLI in print mode instead of a raw HTTP call — auth is
+    # CLAUDE_CODE_OAUTH_TOKEN (from `claude setup-token`), which bills against the
+    # user's Claude subscription, not a metered API key.
     delay = 20
-    is_responses = "responses" in GENERATIVE_ENDPOINT
-    if is_responses:
-        payload = {
-            "model": GENERATIVE_MODEL,
-            "input": prompt,
-            "max_output_tokens": 32768,
-        }
-    else:
-        payload = {
-            "model": GENERATIVE_MODEL,
-            "messages": [{"role": "user", "content": prompt}],
-            # Reasoning models burn tokens inside the hidden reasoning phase before
-            # writing any content; 8192 was too small (finish_reason=length, empty
-            # content, all 8192 in reasoning_tokens). 32768 leaves room for both.
-            "max_tokens": 32768,
-        }
     for attempt in range(1, 5):
         try:
-            r = requests.post(
-                GENERATIVE_ENDPOINT,
-                json=payload,
-                headers={
-                    "Authorization": f"Bearer {os.environ.get('OPENCODE_ZEN_API_KEY') or os.environ['OPENCODE_GO_API_KEY']}",
-                    "Content-Type": "application/json",
-                },
-                timeout=300,  # 300s — reasoning + 32K output can take minutes; 90s timed out
+            r = subprocess.run(
+                ["claude", "-p", "--model", CLAUDE_MODEL],
+                input=prompt,
+                capture_output=True,
+                text=True,
+                timeout=300,  # 300s — long prompt + long output can take minutes; 90s timed out before
             )
-            r.raise_for_status()
-            data = r.json()
-            if is_responses:
-                # Responses API shapes vary: try output_text, then scan output[] for the message.
-                # For reasoning models the first element is often type=reasoning with no text,
-                # so output[0] is empty and the actual assistant message is at output[1] or later.
-                text = data.get("output_text")
-                if not text:
-                    for item in data.get("output", []):
-                        if not isinstance(item, dict):
-                            continue
-                        # content can be list of {text} or {type: output_text, text}
-                        content = item.get("content")
-                        if isinstance(content, list):
-                            for c in content:
-                                if isinstance(c, dict) and c.get("text"):
-                                    text = c["text"]
-                                    break
-                                if isinstance(c, str) and c.strip():
-                                    text = c
-                                    break
-                        elif isinstance(content, str) and content.strip():
-                            text = content
-                        # Some providers use "message" with direct text field
-                        if not text and item.get("text"):
-                            text = item["text"]
-                        if text:
-                            break
-                        # Also check nested output_text
-                        if not text and item.get("output_text"):
-                            text = item["output_text"]
-                            break
-                if not text:
-                    # fallback for openai-compatible responses wrapped as choices
-                    if data.get("choices"):
-                        text = data["choices"][0].get("message", {}).get("content") or data["choices"][0].get("text")
-                if not text:
-                    raise RuntimeError(f"no text in responses payload: {str(data)[:400]}")
-                return text
-            if not data.get("choices"):
-                raise RuntimeError(f"no choices in response: {str(data)[:200]}")
-            return data["choices"][0]["message"]["content"]
+            if r.returncode != 0:
+                raise RuntimeError(f"claude CLI exit {r.returncode}: {r.stderr.strip()[:400]}")
+            text = r.stdout.strip()
+            if not text:
+                raise RuntimeError(f"empty output from claude CLI: stderr={r.stderr.strip()[:400]}")
+            return text
+        except subprocess.TimeoutExpired:
+            if attempt == 4:
+                raise
+            print(f"  claude CLI timeout on attempt {attempt}/4, retrying in {delay}s")
+            time.sleep(delay)
+            delay *= 2
         except Exception as e:
             msg = str(e)
-            transient = any(t in msg for t in ("429", "500", "502", "503", "504",
-                                               "UNAVAILABLE", "DEADLINE_EXCEEDED",
-                                               "RESOURCE_EXHAUSTED"))
+            transient = any(t in msg.lower() for t in ("429", "500", "502", "503", "504",
+                                                         "overloaded", "rate limit", "unavailable",
+                                                         "timeout"))
             if attempt == 4 or not transient:
                 raise
-            print(f"  API {type(e).__name__} on attempt {attempt}/4, retrying in {delay}s: {msg[:120]}")
+            print(f"  claude CLI {type(e).__name__} on attempt {attempt}/4, retrying in {delay}s: {msg[:120]}")
             time.sleep(delay)
             delay *= 2
 
@@ -772,7 +731,7 @@ def build_html(digest_content, newsletters, rss_articles, tldr_articles):
     </main>
     <footer>
         <div class="health">{health_line}</div>
-        Auto-generated from priority RSS feeds using Muse Spark 1.2 (opencode Zen)
+        Auto-generated from priority RSS feeds using Claude Sonnet 5
     </footer>
 </body>
 </html>"""

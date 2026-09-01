@@ -20,7 +20,7 @@ So: no `contents: write`, no auto-commits, no `keepalive-workflow` — don't re-
 
 ## Digest sources
 
-`generate_digest.py` pulls 5 newsletters + 4 RSS feeds + a TLDR scrape, then makes one Gemini pass into static HTML. The footer prints a per-source health line (`hz-ok` / `hz-quiet` / `hz-fail`) — a workflow run goes green even when a source silently returns zero articles, so that line is the only real signal.
+`generate_digest.py` pulls 5 newsletters + 4 RSS feeds + a TLDR scrape, then makes one Claude Sonnet 5 pass into static HTML — via the Claude Code CLI in print mode (`claude -p --model claude-sonnet-5`), authenticated with `CLAUDE_CODE_OAUTH_TOKEN` so it bills against the subscription, not a metered API key. (Was opencode Zen's free Muse Spark 1.2 before 2026-09-01; Gemini before that.) The footer prints a per-source health line (`hz-ok` / `hz-quiet` / `hz-fail`) — a workflow run goes green even when a source silently returns zero articles, so that line is the only real signal.
 
 **Accepted failure:** `Boris Cherny ✗`. His posts are X-only and every free X→RSS route is dead or datacenter-IP-blocked — Nitter instances gated/bot-challenged/403, xcancel serves a fake "not whitelisted" entry, openrss and public RSSHub disabled, the syndication API needs a signed token. Currently on `nitter.net/bcherny/rss`, the last flagship instance serving real tweets, though it's flaky from GitHub's datacenter IPs. Not a bug — don't re-investigate each run.
 

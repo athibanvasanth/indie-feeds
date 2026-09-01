@@ -62,13 +62,18 @@ jobs:
           mkdir -p public
           curl -sf "https://athibanvasanth.github.io/indie-feeds/digest.html" -o public/digest.html && echo "Preserved existing digest.html" || echo "No existing digest to preserve"
 
+      - name: Install Claude Code CLI
+        if: github.event.schedule == '15 1 * * *' || github.event_name == 'workflow_dispatch'
+        run: |
+          curl -fsSL https://claude.ai/install.sh | bash
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
       - name: Generate Daily Digest
         if: github.event.schedule == '15 1 * * *' || github.event_name == 'workflow_dispatch'
         continue-on-error: true
         run: python generate_digest.py
         env:
-          OPENCODE_GO_API_KEY: ${{ secrets.OPENCODE_GO_API_KEY }}
-          OPENCODE_ZEN_API_KEY: ${{ secrets.OPENCODE_ZEN_API_KEY }}
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
 
       - uses: actions/upload-pages-artifact@v4
         with:
