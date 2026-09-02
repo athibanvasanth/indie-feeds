@@ -344,8 +344,9 @@ def parse_tldr_page(text):
 
 
 def fetch_tldr_articles():
-    # TLDR publishes weekday mornings US-Eastern (~10:00 UTC); the digest cron runs at
-    # 01:15 UTC before that day's edition exists, so walk back to the latest published one.
+    # TLDR publishes weekday mornings US-Eastern (~10:00 UTC); the digest generates
+    # early in the UTC day (see digest_already_current()), before that day's edition
+    # exists, so walk back to the latest published one.
     today = datetime.date.today()
     for back in range(4):
         day = (today - datetime.timedelta(days=back)).isoformat()
@@ -737,8 +738,30 @@ def build_html(digest_content, newsletters, rss_articles, tldr_articles):
 </html>"""
 
 
+def digest_already_current():
+    # public/digest.html was just curled down from the live site by the
+    # "Preserve existing digest" workflow step. Every hourly run reaches this
+    # script now (see generate-feed.yml), so skip the expensive Claude pass
+    # once today's UTC-dated digest already exists - only the first run after
+    # midnight UTC should actually regenerate.
+    path = os.path.join(OUT_DIR, "digest.html")
+    if not os.path.exists(path):
+        return False
+    today_str = datetime.datetime.now(datetime.timezone.utc).strftime("%B %d, %Y")
+    try:
+        with open(path, encoding="utf-8") as f:
+            head = f.read(2000)
+    except OSError:
+        return False
+    return f"Daily Digest — {today_str}" in head
+
+
 def main():
     os.makedirs(OUT_DIR, exist_ok=True)
+
+    if digest_already_current():
+        print("digest.html already current for today (UTC) - skipping regeneration")
+        return
 
     print("Fetching all sources...")
     newsletters, rss_articles, tldr_articles = fetch_articles()

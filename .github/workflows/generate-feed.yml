@@ -2,8 +2,11 @@ name: Generate RSS Feed
 
 on:
   schedule:
+    # Digest generation used to be gated to this one exact slot and got
+    # silently dropped by GitHub's scheduler on ~40% of days (found
+    # 2026-09-02) - now every hourly run attempts it, and generate_digest.py
+    # itself skips the expensive part once today's digest already exists.
     - cron: "0 * * * *"
-    - cron: "15 1 * * *"
   workflow_dispatch:
   push:
     branches: [main]
@@ -63,13 +66,11 @@ jobs:
           curl -sf "https://athibanvasanth.github.io/indie-feeds/digest.html" -o public/digest.html && echo "Preserved existing digest.html" || echo "No existing digest to preserve"
 
       - name: Install Claude Code CLI
-        if: github.event.schedule == '15 1 * * *' || github.event_name == 'workflow_dispatch'
         run: |
           curl -fsSL https://claude.ai/install.sh | bash
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
       - name: Generate Daily Digest
-        if: github.event.schedule == '15 1 * * *' || github.event_name == 'workflow_dispatch'
         continue-on-error: true
         run: python generate_digest.py
         env:

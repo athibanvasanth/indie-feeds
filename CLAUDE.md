@@ -6,13 +6,11 @@ Each generator uses whatever hook that site actually exposes: **The Wire** via i
 
 ## Traps — read before changing the workflow
 
-**Both crons live in ONE workflow file.** `generate-feed.yml` (named "Generate RSS Feed") runs hourly (`0 * * * *`) *and* carries the daily digest as a **conditional step**, not a separate workflow:
+**The daily digest lives inside the hourly workflow, not a separate one.** `generate-feed.yml` (named "Generate RSS Feed") runs hourly (`0 * * * *`) and *every* run attempts the digest step — `gh workflow list` correctly shows only one workflow, don't go looking for a missing daily-digest one.
 
-```yaml
-if: github.event.schedule == '15 1 * * *' || workflow_dispatch
-```
+**Digest generation used to be gated to one exact cron slot (`15 1 * * *`) and GitHub's scheduler silently dropped that slot on ~40% of days (found 2026-09-02, no visible failure — the run just never happened).** Fixed by removing the exact-time gate: every hourly run now reaches `generate_digest.py`, which checks the just-curled live `digest.html`'s title date against today's (UTC) and returns immediately if it's already current — so only the first successful run after UTC midnight does the real (expensive) work. Don't re-add a fixed-time-only gate; it will silently break the same way.
 
-So `gh workflow list` correctly shows only one workflow. **Don't "fix" a missing daily-digest workflow — there isn't one to find.** The hourly runs re-serve the existing digest via a "Preserve existing digest" curl step so it never 404s between regenerations.
+The hourly runs re-serve the existing digest via a "Preserve existing digest" curl step so it never 404s between regenerations.
 
 **This repo is under a GitHub abuse flag: Actions WRITE tokens are blocked.** A workflow requesting `contents: write` fails at Set-up-job with "Repository access blocked". Read-only runs (Pages deploy: `pages:write` + `id-token`, `contents:read`) work fine.
 
