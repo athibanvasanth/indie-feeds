@@ -42,8 +42,10 @@ export BASE_URL="https://athibanvasanth.github.io/indie-feeds"
 python generate_feed.py
 python generate_caravan_feed.py
 
-# digest also needs an opencode-go API key (DeepSeek V4 Flash)
-export OPENCODE_GO_API_KEY="..."
+# digest needs the Claude Code CLI installed and authenticated
+# (CLAUDE_CODE_OAUTH_TOKEN from `claude setup-token` — bills against the
+# subscription, not a metered API key)
+export CLAUDE_CODE_OAUTH_TOKEN="..."
 python generate_digest.py
 
 # output lands in the public/ directory
@@ -51,4 +53,4 @@ python generate_digest.py
 
 ## Deployment
 
-GitHub Actions runs the feed generators every hour and the daily digest once a day at 01:15 UTC (≈06:45 IST), then deploys everything to GitHub Pages via `actions/deploy-pages`.
+GitHub Actions runs the feed generators every hour; the same hourly run also checks whether today's (UTC) digest already exists and only regenerates it once, on the first run after UTC midnight. Everything then deploys to GitHub Pages via `actions/deploy-pages`.

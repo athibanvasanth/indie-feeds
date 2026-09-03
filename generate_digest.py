@@ -457,8 +457,6 @@ def summarize(newsletters, rss_articles, tldr_articles):
     for a in tldr_articles:
         tldr_text += f"Source: {a['source']}\nTitle: {a['title']}\nLink: {a['link']}\nSummary: {a['summary']}\n\n"
 
-    total = len(newsletters) + len(rss_articles) + len(tldr_articles)
-
     response = generate_with_retry(f"""You are creating a personal daily news digest. You have been given:
 - {len(newsletters)} full newsletters (Guardian, NYTimes, The Wire, The Hindu) with their complete editorial content
 - {len(rss_articles)} individual RSS articles with fetched content
