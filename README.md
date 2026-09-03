@@ -21,7 +21,7 @@ An AI-summarized digest of the day's news, generated once a day and published at
 - **RSS articles**: The Hindu (Coimbatore), Democracy Now!, Scroll Newsletter, Simon Willison, Boris Cherny
 - **Tech**: TLDR Tech (scraped daily)
 
-`generate_digest.py` fetches everything from the last 28 hours, decodes tracking URLs (awstrack, ablink, piano.io), and feeds it to Gemini 3.5 Flash to produce a structured HTML digest with sections for Today's Briefing, Top Stories, India, World, Tech, and more.
+`generate_digest.py` fetches everything from the last 28 hours, decodes tracking URLs (awstrack, ablink, piano.io), and feeds it to Claude Sonnet 5 (via the Claude Code CLI, billed against the subscription) to produce a structured HTML digest with sections for Today's Briefing, Top Stories, India, World, Tech, and more.
 
 ## How It Works
 
@@ -29,7 +29,7 @@ Each generator script targets a different site using whatever structured data is
 
 - `generate_feed.py` — The Wire (WordPress API, fetches categories dynamically)
 - `generate_caravan_feed.py` — The Caravan (JSON-LD structured data)
-- `generate_digest.py` — Daily digest (newsletters + RSS + TLDR → Gemini summary)
+- `generate_digest.py` — Daily digest (newsletters + RSS + TLDR → Claude Sonnet 5 summary)
 
 All feeds are RSS 2.0 with media thumbnails, full HTML content, author info, and categories.
 
