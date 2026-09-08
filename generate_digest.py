@@ -466,9 +466,9 @@ READ THROUGH EACH NEWSLETTER CAREFULLY. They contain curated editorial picks, st
 
 Create a well-organized HTML digest with these sections in order:
 
-1. **Today's Briefing** — A single paragraph (4-5 sentences) summarizing the most significant things happening today across India and the world. Write it like a friend catching you up over coffee: warm, plain language, no assumptions about prior knowledge. No bullet points, just flowing prose.
+1. **Today's Briefing** — Some days this is the ONLY section that gets read, so it must work as a complete, standalone overview of the day — not a teaser for what follows. As a bulleted list (not a paragraph), cover the 6-10 most essential things happening today across India, the world, AND tech together, ordered by importance rather than by category. Each bullet: a short bold lead-in (3-6 words), then 1-2 sentences giving the key fact and why it matters — enough that the story is actually understood, not just flagged. Same voice as the rest of this digest: warm, plain language, like catching a friend up over coffee, just in list form.
 
-2. **Top Stories** — Pick the 5-7 most important stories from ALL sources. For each one:
+2. **Top Stories** — Pick the 5-7 most important stories from ALL sources. Go deeper here than the Briefing bullets above did — new details, more context, don't just restate the same sentence. For each one:
    - Headline (linked if URL is available)
    - 3-4 sentence summary explaining what happened AND why it matters
    - Source attribution
