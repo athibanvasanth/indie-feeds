@@ -32,4 +32,4 @@ If a *third* source starts failing, escalate regardless.
 
 - `fetch_feed()` detects a JSON body and rebuilds RSS from it via `rss2json_to_rss()`. Dates must be converted to RFC822 — feedparser leaves `published_parsed` empty otherwise, and the 28-hour freshness cutoff then silently drops every entry.
 - Scroll sits in `NEWSLETTER_FEEDS`, not `RSS_FEEDS`: its Daily Brief is multi-story and needs the full-content handler. Under `RSS_FEEDS` it gets capped at 800 chars *and* tries to fetch the article body from Substack — a second 403.
-- The kill-the-newsletter feed tokens in `generate_digest.py`'s `NEWSLETTER_FEEDS` (lines 16-19) are inherently public — public repo, public Pages site. That's a deliberate design choice, not a leak: they only gate inbox delivery, nothing sensitive rides on them.
+- The kill-the-newsletter feed tokens in `generate_digest.py`'s `NEWSLETTER_FEEDS` (lines 21-31) are inherently public — public repo, public Pages site. That's a deliberate design choice, not a leak: they only gate inbox delivery, nothing sensitive rides on them.

@@ -23,14 +23,6 @@ def strip_html(text):
     return re.sub(r"<[^>]+>", "", text).strip()
 
 
-def extract_first_image(html_content):
-    """Extract the first img src from HTML content as a fallback thumbnail."""
-    match = re.search(r'<img[^>]+src=["\']([^"\']+)["\']', html_content)
-    if match:
-        return match.group(1)
-    return None
-
-
 def clean_content(html_content):
     """Clean WordPress content for proper RSS display."""
     # Remove script tags and their content
