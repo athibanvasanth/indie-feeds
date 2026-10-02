@@ -25,6 +25,7 @@ concurrency:
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
@@ -65,12 +66,19 @@ jobs:
           mkdir -p public
           curl -sf "https://athibanvasanth.github.io/indie-feeds/digest.html" -o public/digest.html && echo "Preserved existing digest.html" || echo "No existing digest to preserve"
 
+      - name: Does today's digest need generating?
+        id: digest
+        continue-on-error: true
+        run: python -c "import generate_digest as g; print('needed=' + ('false' if g.digest_already_current() else 'true'))" >> "$GITHUB_OUTPUT"
+
       - name: Install Claude Code CLI
+        if: steps.digest.outputs.needed != 'false'
         run: |
           curl -fsSL https://claude.ai/install.sh | bash
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
       - name: Generate Daily Digest
+        if: steps.digest.outputs.needed != 'false'
         continue-on-error: true
         run: python generate_digest.py
         env:
