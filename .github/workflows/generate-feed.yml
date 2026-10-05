@@ -78,6 +78,7 @@ jobs:
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
       - name: Generate Daily Digest
+        id: gen
         if: steps.digest.outputs.needed != 'false'
         continue-on-error: true
         run: python generate_digest.py
@@ -90,3 +91,12 @@ jobs:
 
       - id: deployment
         uses: actions/deploy-pages@v4
+
+      # The digest step is continue-on-error so feeds still deploy, but that also hid a
+      # 5-day digest outage (2026-10-01..05: run green, stale page). Fail the run AFTER
+      # deploying so GitHub emails the failure.
+      - name: Fail loudly if the digest did not generate
+        if: steps.gen.outcome == 'failure'
+        run: |
+          echo "::error::Daily Digest generation failed - the published digest.html is stale"
+          exit 1

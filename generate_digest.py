@@ -390,6 +390,19 @@ def sanitize_gemini_html(text):
     return text
 
 
+def clean_digest(text):
+    # The model sometimes prefixes commentary ("This confirms the expected output
+    # format... <h2>-delimited sections...") or answers in markdown ("## Heading").
+    # Embedded verbatim, a literal <h2> in that commentary opens a bogus heading
+    # (seen 2026-09-30). Keep only what starts at the first well-formed <h2>Title</h2>,
+    # drop code fences, and reject output with no HTML sections so the caller retries.
+    text = re.sub(r'^\s*```(?:html)?\s*|\s*```\s*$', '', text.strip())
+    m = re.search(r'<h2>[^<\n]{3,100}</h2>', text)
+    if not m:
+        raise ValueError("no well-formed <h2> section in model output (preamble/markdown only?)")
+    return text[m.start():]
+
+
 def generate_with_retry(prompt):
     # The model API 5xx killed the digest outright on 2026-08-04 (504 DEADLINE_EXCEEDED)
     # and 2026-08-05 (503 "high demand"). There was no retry, so one bad minute
@@ -412,11 +425,11 @@ def generate_with_retry(prompt):
                 timeout=300,  # 300s — long prompt + long output can take minutes; 90s timed out before
             )
             if r.returncode != 0:
-                raise RuntimeError(f"claude CLI exit {r.returncode}: {r.stderr.strip()[:400]}")
+                raise RuntimeError(f"claude CLI exit {r.returncode} (prompt {len(prompt)} chars): stderr={r.stderr.strip()[:400]!r} stdout={r.stdout.strip()[:400]!r}")
             text = r.stdout.strip()
             if not text:
                 raise RuntimeError(f"empty output from claude CLI: stderr={r.stderr.strip()[:400]}")
-            return text
+            return clean_digest(text)
         except subprocess.TimeoutExpired:
             if attempt == 4:
                 raise
@@ -425,7 +438,7 @@ def generate_with_retry(prompt):
             delay *= 2
         except Exception as e:
             msg = str(e)
-            transient = any(t in msg.lower() for t in ("429", "500", "502", "503", "504",
+            transient = isinstance(e, ValueError) or any(t in msg.lower() for t in ("429", "500", "502", "503", "504",
                                                          "overloaded", "rate limit", "unavailable",
                                                          "timeout"))
             if attempt == 4 or not transient:
@@ -490,6 +503,7 @@ Rules:
 - Wrap source attributions in <span class="source">, e.g. <span class="source">(The Hindu)</span>
 - Use clean semantic HTML (h2, h3, p, ul, li, a, strong, span tags)
 - Do NOT include html/head/body/doctype tags — just the inner content
+- Output ONLY the HTML, starting directly with the first <h2> tag. No preamble, no commentary about the format, no markdown (no ## headings, no code fences)
 - Do NOT repeat the same story across sections
 - Prioritize stories with real-world impact over celebrity/entertainment
 - If a section would have zero items, skip it entirely
