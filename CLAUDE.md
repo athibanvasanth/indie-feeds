@@ -6,7 +6,7 @@ Each generator uses whatever hook that site actually exposes: **The Wire** via i
 
 ## Traps — read before changing the workflow
 
-**The daily digest lives inside the hourly workflow, not a separate one.** `generate-feed.yml` (named "Generate RSS Feed") runs hourly (`0 * * * *`) and *every* run attempts the digest step — `gh workflow list` correctly shows only one workflow, don't go looking for a missing daily-digest one.
+**The daily digest lives inside the hourly workflow, not a separate one.** `generate-feed.yml` (named "Generate RSS Feed") runs hourly (`0 * * * *`) and *every* run attempts the digest step — `gh workflow list` shows this workflow plus GitHub's own automatic `Dependency Graph`; there is no separate daily-digest workflow to look for.
 
 **Digest generation used to be gated to one exact cron slot (`15 1 * * *`) and GitHub's scheduler silently dropped that slot on ~40% of days (found 2026-09-02, no visible failure — the run just never happened).** Fixed by removing the exact-time gate: every hourly run now reaches `generate_digest.py`, which checks the just-curled live `digest.html`'s title date against today's (UTC) and returns immediately if it's already current — so only the first successful run after UTC midnight does the real (expensive) work. Don't re-add a fixed-time-only gate; it will silently break the same way.
 
@@ -32,4 +32,4 @@ If a *third* source starts failing, escalate regardless.
 
 - `fetch_feed()` detects a JSON body and rebuilds RSS from it via `rss2json_to_rss()`. Dates must be converted to RFC822 — feedparser leaves `published_parsed` empty otherwise, and the 28-hour freshness cutoff then silently drops every entry.
 - Scroll sits in `NEWSLETTER_FEEDS`, not `RSS_FEEDS`: its Daily Brief is multi-story and needs the full-content handler. Under `RSS_FEEDS` it gets capped at 800 chars *and* tries to fetch the article body from Substack — a second 403.
-- The kill-the-newsletter feed tokens in `generate_digest.py`'s `NEWSLETTER_FEEDS` (lines 21-31) are inherently public — public repo, public Pages site. That's a deliberate design choice, not a leak: they only gate inbox delivery, nothing sensitive rides on them.
+- The kill-the-newsletter feed tokens in `generate_digest.py`'s `NEWSLETTER_FEEDS` are inherently public — public repo, public Pages site. That's a deliberate design choice, not a leak: they only gate inbox delivery, nothing sensitive rides on them.
