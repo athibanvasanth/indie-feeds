@@ -43,9 +43,9 @@ python generate_feed.py
 python generate_caravan_feed.py
 
 # digest needs the Claude Code CLI installed and authenticated
-# (CLAUDE_CODE_OAUTH_TOKEN from `claude setup-token` — bills against the
-# subscription, not a metered API key)
-export CLAUDE_CODE_OAUTH_TOKEN="..."
+# (ANTHROPIC_API_KEY, a metered key from console.anthropic.com; the old subscription
+# token from `claude setup-token` was disabled by Anthropic on 2026-10-01)
+export ANTHROPIC_API_KEY="..."
 python generate_digest.py
 
 # output lands in the public/ directory
