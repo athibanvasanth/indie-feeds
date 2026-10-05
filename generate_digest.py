@@ -12,9 +12,8 @@ import requests
 
 OUT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "public")
 
-# Claude Sonnet 5, via the Claude Code CLI in print mode, authenticated with a metered
-# ANTHROPIC_API_KEY (subscription login via CLAUDE_CODE_OAUTH_TOKEN has been refused by
-# Anthropic since 2026-10-01: 'organization has disabled Claude subscription access').
+# Claude Sonnet 5, via the Claude Code CLI in print mode — billed against the
+# user's own Claude subscription (CLAUDE_CODE_OAUTH_TOKEN), not metered API usage.
 # Was opencode Zen's free-tier Muse Spark 1.2 (before that, DeepSeek V4 Flash).
 CLAUDE_MODEL = "claude-sonnet-5"
 
@@ -412,8 +411,9 @@ def generate_with_retry(prompt):
     # failure was invisible for two days. Retry transient errors only; anything
     # else (bad/missing auth, malformed request) raises immediately.
     #
-    # Runs the Claude Code CLI in print mode instead of a raw HTTP call — auth is the
-    # ANTHROPIC_API_KEY env var (metered billing, about one call per day).
+    # Runs the Claude Code CLI in print mode instead of a raw HTTP call — auth is
+    # CLAUDE_CODE_OAUTH_TOKEN (from `claude setup-token`), which bills against the
+    # user's Claude subscription, not a metered API key.
     delay = 20
     for attempt in range(1, 5):
         try:

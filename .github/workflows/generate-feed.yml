@@ -83,9 +83,7 @@ jobs:
         continue-on-error: true
         run: python generate_digest.py
         env:
-          # Metered Anthropic API key. The old CLAUDE_CODE_OAUTH_TOKEN (subscription) is refused by
-          # Anthropic from 2026-10-01: "organization has disabled Claude subscription access".
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
 
       - uses: actions/upload-pages-artifact@v4
         with:
