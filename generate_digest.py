@@ -129,7 +129,7 @@ def fetch_article_content(url):
         return ""
 
 
-def fetch_feed(url, timeout=15, attempts=3):
+def fetch_feed(url, timeout=15, attempts=5):
     # feedparser.parse(url) makes its own request with no timeout and its own
     # bot-signature User-Agent ("feedparser/X.Y +https://github.com/kurtmckee/...").
     # Route through SESSION instead: browser-spoofed UA, explicit timeout, and a
@@ -139,7 +139,9 @@ def fetch_feed(url, timeout=15, attempts=3):
     # Retry added 2026-08-06: rss2json's upstream fetch of Scroll fails roughly
     # 1 call in 10, and a single blip was turning into a hard ✗ for the day. Every
     # feed benefits — an ordinary network wobble no longer costs a source.
-    delay = 3
+    # Widened 2026-10-07 (3 tries over ~9s -> 5 tries over ~75s): rss2json 500'd all three
+    # tries from Actions on Oct 1 and Oct 7, so Scroll needs a longer wait, not more tries.
+    delay = 5
     for attempt in range(1, attempts + 1):
         try:
             resp = SESSION.get(url, timeout=timeout)
