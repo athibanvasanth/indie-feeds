@@ -54,3 +54,11 @@ python generate_digest.py
 ## Deployment
 
 GitHub Actions runs the feed generators every hour; the same hourly run also checks whether today's (UTC) digest already exists and only regenerates it once, on the first run after UTC midnight. Everything then deploys to GitHub Pages via `actions/deploy-pages`.
+
+## Tests
+
+`python3 -m unittest test_digest` — covers the two helpers that broke before (`clean_digest`, `rss2json_to_rss`).
+
+## License
+
+MIT — see [LICENSE](LICENSE).
