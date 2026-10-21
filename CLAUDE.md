@@ -2,7 +2,7 @@
 
 RSS feed generators for sites that don't publish one, plus a daily digest. Deployed to GitHub Pages by GitHub Actions; base URL `athibanvasanth.github.io/indie-feeds/`.
 
-Each generator uses whatever hook that site actually exposes: **The Wire** via its WordPress REST API, **Scroll Newsletter** via rss2json (Substack 403s GitHub Actions' IP range directly), **The Caravan** from JSON-LD.
+Each generator uses whatever hook that site actually exposes: **The Wire** via its WordPress REST API, **Scroll Newsletter** via feed2json.org (Substack 403s GitHub Actions' IP range directly), **The Caravan** from JSON-LD.
 
 ## Traps — read before changing the workflow
 
@@ -24,12 +24,12 @@ So: no `contents: write`, no auto-commits, no `keepalive-workflow` — don't re-
 
 If it dies for good, the fallback ladder is: (1) another live Nitter instance, (2) `borischerny.com/feed.xml` — his blog, rock-stable but roughly yearly, so the digest just stays quiet, (3) self-host RSSHub on the Actual Budget GCP VM with a burner X `auth_token` cookie — the only durable free route to his daily posts, but it needs setup and cookie upkeep.
 
-**Real failure:** `Scroll Newsletter ✗`. Since `7c1f1ba` it routes through rss2json (Substack 403s GitHub Actions' IP range directly, though it's clean from a residential IP). A `✗` here means rss2json is down, rate-limiting, or changed shape — **that is a genuine regression, flag it.**
+**Real failure:** `Scroll Newsletter ✗`. Substack 403s GitHub Actions' IP range directly (clean from a residential IP), so Scroll goes through a converter that fetches from its own host. Route ladder, tried in order by `fetch_feed_any()`: **feed2json.org** (JSON Feed, since 2026-10-21) → rss2json (since `7c1f1ba`; from 2026-10-21 it answers every request with a Cloudflare "Just a moment" 403) → Substack direct. A `✗` means every route failed — **a genuine regression, flag it**; the run log shows which route failed and why.
 
 If a *third* source starts failing, escalate regardless.
 
 ## Gotchas
 
-- `fetch_feed()` detects a JSON body and rebuilds RSS from it via `rss2json_to_rss()`. Dates must be converted to RFC822 — feedparser leaves `published_parsed` empty otherwise, and the 28-hour freshness cutoff then silently drops every entry.
+- `fetch_feed()` detects a JSON body and rebuilds RSS from it via `jsonfeed_to_rss()` (feed2json) or `rss2json_to_rss()`. Dates must be converted to RFC822 — feedparser leaves `published_parsed` empty otherwise, and the 28-hour freshness cutoff then silently drops every entry.
 - Scroll sits in `NEWSLETTER_FEEDS`, not `RSS_FEEDS`: its Daily Brief is multi-story and needs the full-content handler. Under `RSS_FEEDS` it gets capped at 800 chars *and* tries to fetch the article body from Substack — a second 403.
 - The kill-the-newsletter feed tokens in `generate_digest.py`'s `NEWSLETTER_FEEDS` are inherently public — public repo, public Pages site. That's a deliberate design choice, not a leak: they only gate inbox delivery, nothing sensitive rides on them.

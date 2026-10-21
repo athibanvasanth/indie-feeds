@@ -24,10 +24,14 @@ NEWSLETTER_FEEDS = [
     {"name": "NYTimes", "url": "https://kill-the-newsletter.com/feeds/975gttn5j5rzvrylr84x.xml"},
     {"name": "The Hindu Newsletter", "url": "https://kill-the-newsletter.com/feeds/5zujdzatzifucxo5t954.xml"},
     # Scroll's Daily Brief is a multi-story newsletter, so it belongs here rather than in
-    # RSS_FEEDS. Routed through rss2json because Substack 403s GitHub Actions' IP range
-    # directly (clean from a residential IP) — rss2json fetches from its own unblocked
-    # host and hands back the same entries as JSON. fetch_feed() converts that back to RSS.
-    {"name": "Scroll Newsletter", "url": "https://api.rss2json.com/v1/api.json?rss_url=https%3A%2F%2Fscrollnewsletter.substack.com%2Ffeed"},
+    # RSS_FEEDS. Substack 403s GitHub Actions' IP range directly (clean from a residential
+    # IP), so it goes through a converter that fetches from its own unblocked host and
+    # hands back JSON; fetch_feed() turns that back into RSS. feed2json since 2026-10-21:
+    # rss2json started answering every request with a Cloudflare challenge (403). The
+    # fallbacks are tried in order if the main route fails.
+    {"name": "Scroll Newsletter", "url": "https://feed2json.org/convert?url=https%3A%2F%2Fscrollnewsletter.substack.com%2Ffeed",
+     "fallbacks": ["https://api.rss2json.com/v1/api.json?rss_url=https%3A%2F%2Fscrollnewsletter.substack.com%2Ffeed",
+                   "https://scrollnewsletter.substack.com/feed"]},
 ]
 
 # Standard RSS feeds with individual article entries
@@ -147,7 +151,10 @@ def fetch_feed(url, timeout=15, attempts=5):
             resp = SESSION.get(url, timeout=timeout)
             resp.raise_for_status()
             if resp.text.lstrip()[:1] == "{":
-                return feedparser.parse(rss2json_to_rss(resp.json()))
+                payload = resp.json()
+                if "jsonfeed.org" in str(payload.get("version", "")):
+                    return feedparser.parse(jsonfeed_to_rss(payload))
+                return feedparser.parse(rss2json_to_rss(payload))
             return feedparser.parse(resp.content)
         except Exception as e:
             # A 4xx won't fix itself on retry — raise immediately
@@ -160,6 +167,46 @@ def fetch_feed(url, timeout=15, attempts=5):
             print(f"    fetch attempt {attempt}/{attempts} failed ({str(e)[:90]}) — retrying in {delay}s")
             time.sleep(delay)
             delay *= 2
+
+
+def fetch_feed_any(feed_info):
+    # Main url first, then each "fallbacks" entry; re-raises the last error so the
+    # health line still shows ✗ when every route is down.
+    urls = [feed_info["url"]] + feed_info.get("fallbacks", [])
+    for i, url in enumerate(urls):
+        try:
+            return fetch_feed(url)
+        except Exception as e:
+            if i == len(urls) - 1:
+                raise
+            print(f"    {feed_info['name']}: {url.split('/')[2]} failed ({str(e)[:90]}) — trying next route")
+
+
+def jsonfeed_to_rss(payload):
+    # JSON Feed (feed2json.org) -> minimal RSS, same idea as rss2json_to_rss below.
+    # date_published is ISO 8601 and must become RFC822 for the freshness cutoff.
+    def rfc822(value):
+        try:
+            dt = datetime.datetime.fromisoformat(value.replace("Z", "+00:00"))
+            return dt.astimezone(datetime.timezone.utc).strftime("%a, %d %b %Y %H:%M:%S GMT")
+        except (ValueError, TypeError, AttributeError):
+            return ""
+
+    items = payload.get("items") or []
+    if not items:
+        raise RuntimeError(f"feed2json returned no items: {str(payload)[:120]}")
+    out = []
+    for it in items:
+        out.append(
+            "<item>"
+            f"<title>{html_mod.escape(it.get('title', ''))}</title>"
+            f"<link>{html_mod.escape(it.get('url', ''))}</link>"
+            f"<pubDate>{rfc822(it.get('date_published', ''))}</pubDate>"
+            f"<description>{html_mod.escape(it.get('content_html') or it.get('summary') or it.get('content_text') or '')}</description>"
+            "</item>"
+        )
+    title = html_mod.escape(payload.get("title", ""))
+    return f'<?xml version="1.0" encoding="utf-8"?><rss version="2.0"><channel><title>{title}</title>{"".join(out)}</channel></rss>'
 
 
 def rss2json_to_rss(payload):
@@ -205,7 +252,7 @@ def fetch_newsletter_content():
         name = feed_info["name"]
         count = 0
         try:
-            feed = fetch_feed(feed_info["url"])
+            feed = fetch_feed_any(feed_info)
             raw = len(feed.entries)
             for entry in feed.entries[:2]:
                 published = None
