@@ -22,7 +22,10 @@ NEWSLETTER_FEEDS = [
     {"name": "Guardian", "url": "https://kill-the-newsletter.com/feeds/defau1t6a8hk8q2ifvax.xml"},
     {"name": "The Wire Daily", "url": "https://kill-the-newsletter.com/feeds/wfvis6inrr7c7as08gq4.xml"},
     {"name": "NYTimes", "url": "https://kill-the-newsletter.com/feeds/975gttn5j5rzvrylr84x.xml"},
-    {"name": "The Hindu Newsletter", "url": "https://kill-the-newsletter.com/feeds/5zujdzatzifucxo5t954.xml"},
+    # "skip": The Hindu also mails non-news newsletters (books, cinema, lifestyle) to this
+    # address; they took digest slots meant for news (2026-10-21).
+    {"name": "The Hindu Newsletter", "url": "https://kill-the-newsletter.com/feeds/5zujdzatzifucxo5t954.xml",
+     "skip": r"on Books|First Day First Show|Cinema|Lifestyle|Health Matters|Crossword|Sport|Weekend|Podcast"},
     # Scroll's Daily Brief is a multi-story newsletter, so it belongs here rather than in
     # RSS_FEEDS. Substack 403s GitHub Actions' IP range directly (clean from a residential
     # IP), so it goes through a converter that fetches from its own unblocked host and
@@ -30,19 +33,57 @@ NEWSLETTER_FEEDS = [
     # rss2json started answering every request with a Cloudflare challenge (403). The
     # fallbacks are tried in order if the main route fails.
     {"name": "Scroll Newsletter", "url": "https://feed2json.org/convert?url=https%3A%2F%2Fscrollnewsletter.substack.com%2Ffeed",
+     "daily": True,
      "fallbacks": ["https://api.rss2json.com/v1/api.json?rss_url=https%3A%2F%2Fscrollnewsletter.substack.com%2Ffeed",
                    "https://scrollnewsletter.substack.com/feed"]},
 ]
 
 # Standard RSS feeds with individual article entries
+# "max" caps busy feeds (newest first) so one outlet can't crowd out the rest; default 10.
+# Rebalanced 2026-10-21: The Hindu (newsletters + 10 Coimbatore items) dominated and world
+# news came only from the US/UK.
 RSS_FEEDS = [
-    {"name": "The Hindu - Coimbatore", "url": "https://www.thehindu.com/news/cities/Coimbatore/feeder/default.rss"},
+    # India
+    {"name": "The Hindu - Coimbatore", "url": "https://www.thehindu.com/news/cities/Coimbatore/feeder/default.rss", "max": 3},
+    {"name": "The News Minute", "url": "https://www.thenewsminute.com/feed", "max": 6},
+    {"name": "The Indian Express", "url": "https://indianexpress.com/section/india/feed/", "max": 6},
+    # The Wire's articles from this repo's own feed (generate_feed.py), on top of its daily
+    # newsletter - he reads The Wire most and wants it well represented.
+    {"name": "The Wire", "url": "https://athibanvasanth.github.io/indie-feeds/feed.xml", "max": 6},
+    {"name": "Mint", "url": "https://www.livemint.com/rss/economy", "max": 5},
+    # Long-form, every week or two - usually 0 on a given day
+    {"name": "The Caravan", "url": "https://athibanvasanth.github.io/indie-feeds/caravan.xml", "max": 3},
+    # World
+    {"name": "Al Jazeera", "url": "https://www.aljazeera.com/xml/rss/all.xml", "max": 8},
+    {"name": "Democracy Now!", "url": "https://www.democracynow.org/democracynow.rss"},
+    # Tech
+    {"name": "Simon Willison", "url": "https://simonwillison.net/atom/everything/"},
+    {"name": "Rest of World", "url": "https://restofworld.org/feed/latest", "max": 3},
     # His blog since 2026-10-21: nitter.net answered 410 Gone (X-only posts have no
     # free route left). The blog posts roughly yearly, so this source is usually quiet.
     {"name": "Boris Cherny", "url": "https://borischerny.com/feed.xml"},
-    {"name": "Democracy Now!", "url": "https://www.democracynow.org/democracynow.rss"},
-    {"name": "Simon Willison", "url": "https://simonwillison.net/atom/everything/"},
 ]
+
+# Yearly dates that never make the news but matter to an individual taxpayer in India.
+# (month, day, lead days, text) - passed to the model when due within the lead window.
+FIXED_DEADLINES = [
+    (7, 31, 45, "Income tax return (ITR) filing deadline for most individuals (check the news for any extension)"),
+    (12, 31, 30, "Last date for a belated or revised income tax return for the last financial year"),
+    (3, 31, 30, "Financial year ends: last date for tax-saving investments if you use the old tax regime"),
+]
+
+
+def fixed_deadlines_due(today=None):
+    today = today or datetime.date.today()
+    due = []
+    for m, d, lead, text in FIXED_DEADLINES:
+        when = datetime.date(today.year, m, d)
+        if when < today:
+            when = datetime.date(today.year + 1, m, d)
+        if (when - today).days <= lead:
+            due.append(f"{when:%d %B %Y}: {text}")
+    return due
+
 
 SESSION = requests.Session()
 SESSION.headers["User-Agent"] = "Mozilla/5.0 (compatible; indie-feeds-digest/1.0)"
@@ -176,6 +217,10 @@ def fetch_feed_any(feed_info):
     # health line still shows ✗ when every route is down.
     urls = [feed_info["url"]] + feed_info.get("fallbacks", [])
     for i, url in enumerate(urls):
+        if "feed2json.org" in url:
+            # feed2json caches by URL and served a day-old Scroll feed (2026-10-21); a
+            # throwaway query on the inner URL forces a fresh fetch.
+            url += f"%3Fcb%3D{int(time.time())}"
         try:
             return fetch_feed(url)
         except Exception as e:
@@ -256,7 +301,9 @@ def fetch_newsletter_content():
         try:
             feed = fetch_feed_any(feed_info)
             raw = len(feed.entries)
-            for entry in feed.entries[:2]:
+            skip = feed_info.get("skip")
+            entries = [e for e in feed.entries[:6] if not (skip and re.search(skip, e.get("title", ""), re.I))][:2]
+            for entry in entries:
                 published = None
                 if hasattr(entry, "published_parsed") and entry.published_parsed:
                     published = datetime.datetime(*entry.published_parsed[:6], tzinfo=datetime.timezone.utc)
@@ -295,7 +342,15 @@ def fetch_newsletter_content():
                 })
                 count += 1
                 print(f"  {feed_info['name']}: '{title}' ({len(full_text)} chars, {len(links)} links)")
-            SOURCE_HEALTH[name] = {"count": count, "failed": raw == 0}
+            stale = False
+            if feed_info.get("daily") and feed.entries and feed.entries[0].get("published_parsed"):
+                # A daily newsletter whose newest issue is >36h old means a stale or broken
+                # route, not a quiet day - show ✗ instead of a misleading 0.
+                newest = datetime.datetime(*feed.entries[0].published_parsed[:6], tzinfo=datetime.timezone.utc)
+                stale = newest < datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=36)
+                if stale:
+                    print(f"  {name}: newest issue {newest:%Y-%m-%d %H:%M} UTC is stale")
+            SOURCE_HEALTH[name] = {"count": count, "failed": raw == 0 or stale}
         except Exception as e:
             print(f"  Failed to fetch {name}: {e}")
             SOURCE_HEALTH[name] = {"count": count, "failed": True}
@@ -315,7 +370,7 @@ def fetch_rss_articles():
             feed = fetch_feed(feed_info["url"])
             raw = len(feed.entries)
             fresh = []
-            for entry in feed.entries[:10]:
+            for entry in feed.entries[:feed_info.get("max", 10)]:
                 published = None
                 if hasattr(entry, "published_parsed") and entry.published_parsed:
                     published = datetime.datetime(*entry.published_parsed[:6], tzinfo=datetime.timezone.utc)
@@ -396,6 +451,20 @@ def parse_tldr_page(text):
     return articles
 
 
+def tldr_spread(articles, n):
+    # Take items round-robin across TLDR's sections (Big Tech, Science, Programming...)
+    # so trimming to n keeps the variety instead of just the first section.
+    by_sec = {}
+    for a in articles:
+        by_sec.setdefault(a["source"], []).append(a)
+    out = []
+    while len(out) < n and any(by_sec.values()):
+        for sec in list(by_sec):
+            if by_sec[sec] and len(out) < n:
+                out.append(by_sec[sec].pop(0))
+    return out
+
+
 def fetch_tldr_articles():
     # TLDR publishes weekday mornings US-Eastern (~10:00 UTC); the digest generates
     # early in the UTC day (see digest_already_current()), before that day's edition
@@ -410,7 +479,7 @@ def fetch_tldr_articles():
         except Exception as e:
             print(f"  TLDR {day}: fetch failed: {e}")
             continue
-        articles = parse_tldr_page(r.text)
+        articles = tldr_spread(parse_tldr_page(r.text), 8)
         if articles:
             print(f"  TLDR: scraped {len(articles)} articles from {day}")
             SOURCE_HEALTH["TLDR"] = {"count": len(articles), "failed": False}
@@ -501,7 +570,7 @@ def generate_with_retry(prompt):
             delay *= 2
 
 
-def summarize(newsletters, rss_articles, tldr_articles):
+def summarize(newsletters, rss_articles, tldr_articles, previous_text=""):
     if not newsletters and not rss_articles and not tldr_articles:
         return "<p>No new articles in the last 28 hours.</p>"
 
@@ -523,8 +592,10 @@ def summarize(newsletters, rss_articles, tldr_articles):
     for a in tldr_articles:
         tldr_text += f"Source: {a['source']}\nTitle: {a['title']}\nLink: {a['link']}\nSummary: {a['summary']}\n\n"
 
+    fixed = "\n".join(fixed_deadlines_due())
+
     response = generate_with_retry(f"""You are creating a personal daily news digest. You have been given:
-- {len(newsletters)} full newsletters (Guardian, NYTimes, The Wire, The Hindu) with their complete editorial content
+- {len(newsletters)} full newsletters (Guardian, NYTimes, The Wire, The Hindu, Scroll) with their complete editorial content
 - {len(rss_articles)} individual RSS articles with fetched content
 - {len(tldr_articles)} tech articles scraped from TLDR newsletter
 
@@ -532,24 +603,27 @@ READ THROUGH EACH NEWSLETTER CAREFULLY. They contain curated editorial picks, st
 
 Create a well-organized HTML digest with these sections in order:
 
-1. **Today's Briefing** — Some days this is the ONLY section that gets read, so it must work as a complete, standalone overview of the day — not a teaser for what follows. Start with a single summary paragraph (3-5 sentences) that ties together the day's most important throughline(s) across India, the world, AND tech — what's the big picture, what connects, what a busy person needs to walk away knowing. Then, below that paragraph, a bulleted list covering the 6-10 most essential things happening today across all three areas together, ordered by importance rather than by category. Each bullet: a short bold lead-in (3-6 words) **made into a clickable link to that story's source URL when one is available**, then 1-2 sentences giving the key fact and why it matters — enough that the story is actually understood, not just flagged. Same voice as the rest of this digest: warm, plain language, like catching a friend up over coffee, both in the paragraph and in the list.
+0. **Dates That Affect You** — ONLY when the news contains an official deadline, rule change or civic window that an ordinary individual living in Tamil Nadu must act on (income tax filing or extensions, PAN/Aadhaar/KYC rules, voter-roll registration or revision, two-wheeler insurance/PUC/traffic rules, health insurance rules, bank or UPI rule changes), or the FIXED DEADLINES list below has entries. At most 5 items as a <ul>; each <li>: <strong>the date</strong> — what to do in one plain sentence, linked to the source when there is one. Skip the section entirely when nothing qualifies; never include general news, company or business deadlines, or anything that does not ask the reader to do something.
 
-2. **Top Stories** — Pick the 5-7 most important stories from ALL sources. Go deeper here than the Briefing bullets above did — new details, more context, don't just restate the same sentence. For each one:
-   - Headline (linked if URL is available)
-   - 3-4 sentence summary explaining what happened AND why it matters
-   - Source attribution
+1. **Today's Briefing** — Some days this is the ONLY section that gets read, so it must work as a complete, standalone overview of the day. Start with a single summary paragraph (3-5 sentences) that ties together the day's most important throughline(s) across India, the world, AND tech — what's the big picture, what connects, what a busy person needs to walk away knowing. Then 8-12 STORY items covering the most essential things happening today across all three areas, ordered by importance rather than by category. These replace a separate "Top Stories" section: the one-line summary is the quick read, the hidden part is the deep read, so the hidden part must add real detail and context, not restate the line.
 
-3. **India** — Key Indian news stories (3-5 items) from The Hindu, The Wire, Scroll, etc. Each with headline, 2-3 sentence summary, and source attribution. Skip if nothing notable.
+2. **India** — 3-5 further Indian STORY items (The Wire, The Hindu, The Indian Express, Scroll, The News Minute, Mint, The Caravan, Coimbatore news) not already in the Briefing. Skip if nothing notable.
 
-4. **World** — Key international stories (3-5 items) from Guardian, NYTimes, Democracy Now. Same format. Skip if nothing notable.
+3. **World** — 3-5 further international STORY items (Guardian, NYTimes, Al Jazeera, Democracy Now) not already in the Briefing. Skip if nothing notable.
 
-5. **Tech** — Technology highlights (2-4 items) from Simon Willison, TLDR, etc. Same format. Skip if nothing notable.
+4. **Tech** — 2-4 further technology STORY items (Simon Willison, Rest of World, TLDR) not already in the Briefing. Skip if nothing notable.
 
-6. **Boris Cherny** — If there are any articles from "Boris Cherny", give them their own section. Skip if none.
+5. **Boris Cherny** — If there are any articles from "Boris Cherny", give them their own section as STORY items. Skip if none.
 
-7. **TLDR Highlights** — Pick the 5-8 most interesting articles from TLDR sources. For each: linked headline, 1-2 sentence summary, TLDR sub-section in parentheses. Skip if none.
+6. **TLDR Highlights** — The 5-8 most interesting TLDR articles not used above, as a plain <ul>: linked headline, 1-2 sentence summary, TLDR sub-section in parentheses. Skip if none.
 
-8. **Also Worth Reading** — Everything else as a compact list grouped by source. Format: source name as a bold label, then bullet points with titles (linked if URL available).
+7. **Also Worth Reading** — Everything else as a compact list grouped by source. Format: source name as a bold label, then bullet points with titles (linked if URL available).
+
+STORY item format — use exactly this HTML for every story in sections 1-5, one after another (not inside <ul>):
+<details class="story"><summary><span class="tag tag-new">New</span> <strong>Lead-in of 3-6 words</strong> — one sentence with the single key fact.</summary><div class="more"><p>3-4 sentences: what happened, the context, and why it matters.</p><p class="src"><a href="SOURCE_URL">Read the full story</a> <span class="source">(Source name)</span></p></div></details>
+- The tag is either <span class="tag tag-new">New</span> or <span class="tag tag-update">Update</span>. Use Update ONLY when the same ongoing story appears in YESTERDAY'S DIGEST below; then begin the hidden part with <p><strong>What's changed:</strong> one sentence on what is new since yesterday.</p> before the context. Everything else is New.
+- Put the source link in the hidden part; if no URL is available, drop the <a> and keep the source name.
+- The one-line summary must make sense on its own — a reader who opens nothing should still know what happened.
 
 Rules:
 - Make titles clickable <a> links when a URL is available. If no URL, just use plain text.
@@ -558,6 +632,11 @@ Rules:
 - Do NOT include html/head/body/doctype tags — just the inner content
 - Output ONLY the HTML, starting directly with the first <h2> tag. No preamble, no commentary about the format, no markdown (no ## headings, no code fences)
 - Do NOT repeat the same story across sections
+- No single outlet supplies more than 3 of the Briefing's stories, or more than 3 items in any other section; spread every section across outlets.
+- Every newsletter that carries significant news must contribute at least one story somewhere in the digest. The Guardian and NYTimes newsletters are the main Western world sources: World must draw on them as well as Al Jazeera.
+- The reader values The Wire most: when The Wire covers a story, cite The Wire as its source, and make sure The Wire's strongest stories of the day appear (within the cap above).
+- BALANCE: the Briefing gives India, the wider world and tech each fair space, chosen by importance, not by which source sent the most text. For world news, reach beyond the US and Europe: when Al Jazeera or others cover the Middle East, Africa, Asia or Latin America, include the significant stories. For Indian news, draw on several outlets rather than one. Mint's economy stories count as India news.
+- Do NOT summarise YESTERDAY'S DIGEST itself — it is only there so you can tell New from Update
 - Prioritize stories with real-world impact over celebrity/entertainment
 - If a section would have zero items, skip it entirely
 - IMPORTANT: The newsletters contain MANY stories — extract all significant ones, don't just pick 2-3 from each
@@ -577,7 +656,13 @@ Clarity rules (most important):
 {article_text}
 
 === TLDR TECH ===
-{tldr_text}""")
+{tldr_text}
+
+=== FIXED DEADLINES (yearly dates due soon; include each in Dates That Affect You) ===
+{fixed or "(none)"}
+
+=== YESTERDAY'S DIGEST (for New/Update tagging only) ===
+{previous_text or "(not available)"}""")
     text = response
     if not text:
         # Empty response — either a safety block or the output hit max_tokens.
@@ -611,19 +696,31 @@ def split_sections(digest_content):
     while i < len(parts) - 1:
         title = re.sub(r'</?h2>', '', parts[i]).strip()
         body = parts[i + 1]
-        count = len(re.findall(r'<li>|<h3>', body))
+        count = len(re.findall(r'<details class="story"', body)) or len(re.findall(r'<li>', body))
         sections.append((title, slugify(title), body, count))
         i += 2
     return sections
 
 
+def read_minutes(html_text):
+    # ~220 words a minute; never show "0 min"
+    return max(1, round(len(strip_html(html_text).split()) / 220))
+
+
+def quick_part(body):
+    # What you read without opening anything: everything except the hidden story bodies.
+    return re.sub(r'<div class="more">.*?</div>\s*</details>', '</details>', body, flags=re.DOTALL)
+
+
 def render_sections(sections):
-    # first two sections (Briefing, Top Stories) open by default; rest start collapsed
+    # Only the Briefing opens by default; quick days stop there, deep days open the rest.
     parts = []
     for idx, (title, slug, body, count) in enumerate(sections):
-        open_attr = " open" if idx < 2 else ""
-        badge = f'<span class="badge">{count}</span>' if count else ""
-        parts.append(f"""<details id="{slug}"{open_attr}>
+        open_attr = " open" if slug in ("todays-briefing", "dates-that-affect-you") else ""
+        quick, full = read_minutes(quick_part(body)), read_minutes(body)
+        when = f"{quick} min quick · {full} min in full" if 'class="story"' in body and full > quick else f"{full} min"
+        badge = f'<span class="badge">{count} · {when}</span>' if count else f'<span class="badge">{when}</span>'
+        parts.append(f"""<details class="sec" id="{slug}"{open_attr}>
             <summary><h2>{title}{badge}</h2></summary>
             <div class="section-body">{body}</div>
         </details>""")
@@ -635,6 +732,7 @@ def render_nav_pills(sections):
     for title, slug, body, count in sections:
         label = f"{title} ({count})" if count else title
         pills.append(f'<a href="#{slug}">{label}</a>')
+    pills.append('<button type="button" id="expand-all">Expand all</button>')
     return "\n".join(pills)
 
 
@@ -720,7 +818,7 @@ def build_html(digest_content, newsletters, rss_articles, tldr_articles):
             white-space: nowrap;
         }}
         nav a:hover {{ border-color: #e8734a; color: #e8734a; }}
-        details {{
+        details.sec {{
             border-bottom: 1px solid #1a1a1a;
             margin-bottom: 0.25rem;
         }}
@@ -751,6 +849,23 @@ def build_html(digest_content, newsletters, rss_articles, tldr_articles):
             vertical-align: middle;
         }}
         .section-body {{ padding: 0.25rem 0 1rem 1.3rem; }}
+        #dates-that-affect-you {{ border: 1px solid #3a2a10; border-radius: 8px; padding: 0 0.75rem; margin-bottom: 0.75rem; }}
+        #dates-that-affect-you h2 {{ color: #f0b25a; }}
+        details.story {{ margin: 0.15rem 0; border-left: 2px solid #1f1f1f; padding-left: 0.6rem; }}
+        details.story[open] {{ border-left-color: #e8734a; }}
+        details.story > summary {{ padding: 0.35rem 0; font-size: 0.95rem; color: #ccc; line-height: 1.55; }}
+        details.story > summary::before {{ font-size: 0.8em; }}
+        .more {{ padding: 0 0 0.5rem 1rem; }}
+        .more p {{ margin: 0.35rem 0; }}
+        .src {{ font-size: 0.85rem; }}
+        .tag {{ display: inline-block; font-size: 0.66rem; font-weight: 600; letter-spacing: 0.03em;
+                text-transform: uppercase; padding: 0.05rem 0.4rem; border-radius: 4px; margin-right: 0.3rem;
+                vertical-align: 0.1em; }}
+        .tag-new {{ background: #16301f; color: #7fc79a; }}
+        .tag-update {{ background: #3a2a10; color: #f0b25a; }}
+        nav button {{ padding: 0.3rem 0.7rem; border: 1px solid #333; border-radius: 999px; font-size: 0.78rem;
+                      color: #bbb; background: #000; cursor: pointer; font-family: inherit; }}
+        nav button:hover {{ border-color: #e8734a; color: #e8734a; }}
         h2 {{
             font-size: 1.15rem;
             font-weight: 600;
@@ -795,6 +910,15 @@ def build_html(digest_content, newsletters, rss_articles, tldr_articles):
     <main>
         {sections_html}
     </main>
+    <script>
+        // Expand all: opens every section and story; tap again to fold back to the quick view.
+        const b = document.getElementById('expand-all');
+        if (b) b.addEventListener('click', () => {{
+            const open = b.textContent === 'Expand all';
+            document.querySelectorAll('details').forEach((d, i) => {{ d.open = open || d.id === 'todays-briefing' || d.id === 'dates-that-affect-you'; }});
+            b.textContent = open ? 'Collapse all' : 'Expand all';
+        }});
+    </script>
     <footer>
         <div class="health">{health_line}</div>
         Auto-generated from priority RSS feeds using Claude Sonnet 5
@@ -821,6 +945,20 @@ def digest_already_current():
     return f"Daily Digest — {today_str}" in head
 
 
+def previous_digest_text():
+    # The workflow curls the live (yesterday's) digest.html into public/ before this runs;
+    # its story headlines let the model tag today's stories New or Update.
+    path = os.path.join(OUT_DIR, "digest.html")
+    try:
+        with open(path, encoding="utf-8") as f:
+            page = f.read()
+    except OSError:
+        return ""
+    m = re.search(r"<main>(.*?)</main>", page, re.DOTALL)
+    body = quick_part(m.group(1)) if m else ""
+    return strip_html(body)[:8000]
+
+
 def main():
     os.makedirs(OUT_DIR, exist_ok=True)
 
@@ -838,7 +976,7 @@ def main():
         return
 
     print("\nGenerating AI summary...")
-    digest_content = summarize(newsletters, rss_articles, tldr_articles)
+    digest_content = summarize(newsletters, rss_articles, tldr_articles, previous_digest_text())
 
     page = build_html(digest_content, newsletters, rss_articles, tldr_articles)
     output_path = os.path.join(OUT_DIR, "digest.html")
