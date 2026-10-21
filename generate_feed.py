@@ -1,3 +1,4 @@
+import concurrent.futures
 import datetime
 import html
 import os
@@ -493,16 +494,23 @@ def main():
     categories = [c for c in categories if c.get("count", 0) > 10]
     print(f"  Found {len(categories)} categories")
 
+    # Fetched 6 at a time since 2026-10-21: one by one, ~45 categories took ~80s every run.
+    # pool.map keeps the categories' order, so output and index stay identical.
+    def fetch_cat(cat):
+        try:
+            return cat, fetch_posts(30, category_id=cat["id"]), None
+        except Exception as e:
+            return cat, None, e
+
     category_feeds = []
-    for cat in categories:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=6) as pool:
+        results = list(pool.map(fetch_cat, categories))
+    for cat, cat_posts, err in results:
         slug = cat["slug"]
         name = html.unescape(cat["name"])
-        cat_id = cat["id"]
         print(f"  Fetching category: {name} ({slug})...")
-        try:
-            cat_posts = fetch_posts(30, category_id=cat_id)
-        except Exception as e:
-            print(f"    Error fetching {slug}: {e}")
+        if err:
+            print(f"    Error fetching {slug}: {err}")
             continue
         cat_feed_url = f"{base_url}/{slug}.xml" if base_url else f"{slug}.xml"
         cat_rss = build_rss(

@@ -26,6 +26,8 @@ jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    env:
+      PYTHONUNBUFFERED: "1"  # real per-line timestamps in the logs (output was flushed only at exit)
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}

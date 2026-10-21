@@ -37,7 +37,9 @@ NEWSLETTER_FEEDS = [
 # Standard RSS feeds with individual article entries
 RSS_FEEDS = [
     {"name": "The Hindu - Coimbatore", "url": "https://www.thehindu.com/news/cities/Coimbatore/feeder/default.rss"},
-    {"name": "Boris Cherny", "url": "https://nitter.net/bcherny/rss"},  # accepted gap: Nitter instances routinely dead/blocked
+    # His blog since 2026-10-21: nitter.net answered 410 Gone (X-only posts have no
+    # free route left). The blog posts roughly yearly, so this source is usually quiet.
+    {"name": "Boris Cherny", "url": "https://borischerny.com/feed.xml"},
     {"name": "Democracy Now!", "url": "https://www.democracynow.org/democracynow.rss"},
     {"name": "Simon Willison", "url": "https://simonwillison.net/atom/everything/"},
 ]
@@ -274,8 +276,10 @@ def fetch_newsletter_content():
                 if not raw_html:
                     continue
 
-                # Extract full newsletter text
-                full_text = strip_html(raw_html)[:4000]
+                # Extract full newsletter text. Cap was 4000 until 2026-10-21, which kept only
+                # 24-39% of Guardian First Edition, NYT The World and The Hindu Morning Filter
+                # (10-17k chars each) - most of their stories never reached the model.
+                full_text = strip_html(raw_html)[:16000]
                 # Extract any decodable links
                 links = extract_links_from_html(raw_html)
                 link_text = ""
@@ -327,7 +331,7 @@ def fetch_rss_articles():
             bodies = {}
             links_to_fetch = list(dict.fromkeys(
                 e.get("link", "") for e in fresh
-                if e.get("link", "") and feed_info["name"] not in ("Boris Cherny",)
+                if e.get("link", "")
             ))
             if links_to_fetch:
                 with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
