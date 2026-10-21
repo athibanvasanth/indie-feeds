@@ -1,5 +1,7 @@
+import base64
 import concurrent.futures
 import datetime
+import hashlib
 import html as html_mod
 import os
 import re
@@ -592,8 +594,6 @@ def summarize(newsletters, rss_articles, tldr_articles, previous_text=""):
     for a in tldr_articles:
         tldr_text += f"Source: {a['source']}\nTitle: {a['title']}\nLink: {a['link']}\nSummary: {a['summary']}\n\n"
 
-    fixed = "\n".join(fixed_deadlines_due())
-
     response = generate_with_retry(f"""You are creating a personal daily news digest. You have been given:
 - {len(newsletters)} full newsletters (Guardian, NYTimes, The Wire, The Hindu, Scroll) with their complete editorial content
 - {len(rss_articles)} individual RSS articles with fetched content
@@ -603,7 +603,7 @@ READ THROUGH EACH NEWSLETTER CAREFULLY. They contain curated editorial picks, st
 
 Create a well-organized HTML digest with these sections in order:
 
-0. **Dates That Affect You** — ONLY when the news contains an official deadline, rule change or civic window that an ordinary individual living in Tamil Nadu must act on (income tax filing or extensions, PAN/Aadhaar/KYC rules, voter-roll registration or revision, two-wheeler insurance/PUC/traffic rules, health insurance rules, bank or UPI rule changes), or the FIXED DEADLINES list below has entries. At most 5 items as a <ul>; each <li>: <strong>the date</strong> — what to do in one plain sentence, linked to the source when there is one. Skip the section entirely when nothing qualifies; never include general news, company or business deadlines, or anything that does not ask the reader to do something.
+0. **Deadlines in the News** — ONLY when the news contains an official deadline, rule change or civic window that an ordinary individual living in Tamil Nadu must act on (income tax filing or extensions, PAN/Aadhaar/KYC rules, voter-roll registration or revision, two-wheeler insurance/PUC/traffic rules, health insurance rules, bank or UPI rule changes). At most 5 items as a <ul>; each <li>: <strong>the date</strong> — what to do in one plain sentence, linked to the source when there is one. Skip the section entirely when nothing qualifies; never include general news, company or business deadlines, or anything that does not ask the reader to do something.
 
 1. **Today's Briefing** — Some days this is the ONLY section that gets read, so it must work as a complete, standalone overview of the day. Start with a single summary paragraph (3-5 sentences) that ties together the day's most important throughline(s) across India, the world, AND tech — what's the big picture, what connects, what a busy person needs to walk away knowing. Then 8-12 STORY items covering the most essential things happening today across all three areas, ordered by importance rather than by category. These replace a separate "Top Stories" section: the one-line summary is the quick read, the hidden part is the deep read, so the hidden part must add real detail and context, not restate the line.
 
@@ -657,9 +657,6 @@ Clarity rules (most important):
 
 === TLDR TECH ===
 {tldr_text}
-
-=== FIXED DEADLINES (yearly dates due soon; include each in Dates That Affect You) ===
-{fixed or "(none)"}
 
 === YESTERDAY'S DIGEST (for New/Update tagging only) ===
 {previous_text or "(not available)"}""")
@@ -716,7 +713,8 @@ def render_sections(sections):
     # Only the Briefing opens by default; quick days stop there, deep days open the rest.
     parts = []
     for idx, (title, slug, body, count) in enumerate(sections):
-        open_attr = " open" if slug in ("todays-briefing", "dates-that-affect-you") else ""
+        # Your Dates stays folded (his choice); the Briefing and any news deadlines open.
+        open_attr = " open" if slug in ("todays-briefing", "deadlines-in-the-news") else ""
         quick, full = read_minutes(quick_part(body)), read_minutes(body)
         when = f"{quick} min quick · {full} min in full" if 'class="story"' in body and full > quick else f"{full} min"
         badge = f'<span class="badge">{count} · {when}</span>' if count else f'<span class="badge">{when}</span>'
@@ -736,7 +734,121 @@ def render_nav_pills(sections):
     return "\n".join(pills)
 
 
-def build_html(digest_content, newsletters, rss_articles, tldr_articles):
+def personal_dates():
+    # PERSONAL_DATES secret: one "YYYY-MM-DD|item|notes" per line, synced from his private
+    # dotfiles memory note by deadlines.sh. Only ever rendered into the encrypted page.
+    rows = []
+    for line in os.environ.get("PERSONAL_DATES", "").splitlines():
+        parts = [x.strip() for x in line.split("|")]
+        try:
+            when = datetime.date.fromisoformat(parts[0])
+        except (ValueError, IndexError):
+            continue
+        rows.append((when, parts[1] if len(parts) > 1 else "", parts[2] if len(parts) > 2 else ""))
+    return rows
+
+
+def render_your_dates(include_personal):
+    today = datetime.date.today()
+    items = []
+    for m, d, lead, text in FIXED_DEADLINES:
+        when = datetime.date(today.year, m, d)
+        if when < today:
+            when = datetime.date(today.year + 1, m, d)
+        items.append((when, text, "Every year"))
+    if include_personal:
+        items += personal_dates()
+    if not items:
+        return ""
+    lis = []
+    for when, item, note in sorted(items):
+        days = (when - today).days
+        cls = "overdue" if days < 0 else "soon" if days <= 30 else "later"
+        left = f"{-days} days overdue" if days < 0 else "today" if days == 0 else f"in {days} days"
+        note_html = f'<span class="dnote">{html_mod.escape(note)}</span>' if note else ""
+        lis.append(f'<li class="{cls}"><span class="dwhen">{when:%d %b %Y} · {left}</span>'
+                   f'<span class="ditem">{html_mod.escape(item)}</span>{note_html}</li>')
+    return ("<h2>Your Dates</h2><ul class=\"dates\">" + "".join(lis) + "</ul>")
+
+
+# Fixed salt so the key a device remembers keeps opening each new day's page.
+LOCK_SALT = hashlib.sha256(b"indie-feeds digest lock v1").digest()[:16]
+LOCK_ITER = 600_000
+
+
+def lock_key(password):
+    return hashlib.pbkdf2_hmac("sha256", password.encode(), LOCK_SALT, LOCK_ITER, 32)
+
+
+def encrypt_page(page, password, title):
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+    iv = os.urandom(12)
+    ct = AESGCM(lock_key(password)).encrypt(iv, page.encode("utf-8"), None)
+    b64 = lambda x: base64.b64encode(x).decode()
+    return LOCK_TEMPLATE.replace("{TITLE}", html_mod.escape(title)).replace("{SALT}", b64(LOCK_SALT)) \
+        .replace("{ITER}", str(LOCK_ITER)).replace("{IV}", b64(iv)).replace("{CT}", b64(ct))
+
+
+def decrypt_page(shell, password):
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+    iv = re.search(r'data-iv="([^"]+)"', shell); ct = re.search(r'data-ct="([^"]+)"', shell)
+    if not (iv and ct and password):
+        return ""
+    try:
+        return AESGCM(lock_key(password)).decrypt(base64.b64decode(iv.group(1)), base64.b64decode(ct.group(1)), None).decode("utf-8")
+    except Exception:
+        return ""
+
+
+LOCK_TEMPLATE = """<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{TITLE}</title><meta name="robots" content="noindex">
+<style>
+body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #000; color: #e0e0e0;
+       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; }
+form { display: grid; gap: 0.75rem; width: min(320px, 88vw); }
+h1 { font-size: 1.4rem; margin: 0; color: #f0f0f0; } p { margin: 0; color: #888; font-size: 0.9rem; }
+input[type=password] { padding: 0.7rem; border-radius: 8px; border: 1px solid #333; background: #111; color: #eee; font-size: 1rem; }
+button { padding: 0.7rem; border-radius: 8px; border: 0; background: #e8734a; color: #000; font-weight: 600; font-size: 1rem; }
+label { color: #999; font-size: 0.85rem; } #err { color: #d1603a; min-height: 1.2em; }
+</style></head><body>
+<form id="lock" data-salt="{SALT}" data-iter="{ITER}" data-iv="{IV}" data-ct="{CT}">
+  <h1>Daily Digest</h1><p>Private page. Enter your password to read today's digest.</p>
+  <input id="pw" type="password" autocomplete="current-password" placeholder="Password" required>
+  <label><input id="remember" type="checkbox" checked> Remember on this device</label>
+  <button type="submit">Open</button><div id="err"></div>
+</form>
+<script>
+const f = document.getElementById('lock');
+const b64 = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
+async function open(raw) {
+  const key = await crypto.subtle.importKey('raw', raw, 'AES-GCM', false, ['decrypt']);
+  const pt = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: b64(f.dataset.iv) }, key, b64(f.dataset.ct));
+  document.open(); document.write(new TextDecoder().decode(pt)); document.close();
+}
+async function derive(pw) {
+  const base = await crypto.subtle.importKey('raw', new TextEncoder().encode(pw), 'PBKDF2', false, ['deriveBits']);
+  return new Uint8Array(await crypto.subtle.deriveBits({ name: 'PBKDF2', hash: 'SHA-256', salt: b64(f.dataset.salt),
+    iterations: +f.dataset.iter }, base, 256));
+}
+(async () => {
+  let saved = null; try { saved = localStorage.getItem('digest-key'); } catch (e) {}
+  if (saved) { try { await open(b64(saved)); return; } catch (e) { try { localStorage.removeItem('digest-key'); } catch (e2) {} } }
+})();
+f.addEventListener('submit', async e => {
+  e.preventDefault(); document.getElementById('err').textContent = 'Opening…';
+  try {
+    const raw = await derive(document.getElementById('pw').value);
+    if (document.getElementById('remember').checked) {
+      try { localStorage.setItem('digest-key', btoa(String.fromCharCode(...raw))); } catch (e) {}
+    }
+    await open(raw);
+  } catch (err) { document.getElementById('err').textContent = 'Wrong password. Try again.'; }
+});
+</script></body></html>"""
+
+
+def build_html(digest_content, newsletters, rss_articles, tldr_articles, your_dates=""):
     now = datetime.datetime.now(datetime.timezone.utc)
     date_str = now.strftime("%B %d, %Y")
     ist = now + datetime.timedelta(hours=5, minutes=30)
@@ -752,7 +864,7 @@ def build_html(digest_content, newsletters, rss_articles, tldr_articles):
     total = len(newsletters) + len(rss_articles) + len(tldr_articles)
     health_line = render_health()
 
-    sections = split_sections(digest_content)
+    sections = split_sections(your_dates + digest_content)
     nav_html = render_nav_pills(sections)
     sections_html = render_sections(sections) if sections else digest_content
 
@@ -849,8 +961,16 @@ def build_html(digest_content, newsletters, rss_articles, tldr_articles):
             vertical-align: middle;
         }}
         .section-body {{ padding: 0.25rem 0 1rem 1.3rem; }}
-        #dates-that-affect-you {{ border: 1px solid #3a2a10; border-radius: 8px; padding: 0 0.75rem; margin-bottom: 0.75rem; }}
-        #dates-that-affect-you h2 {{ color: #f0b25a; }}
+        #your-dates, #deadlines-in-the-news {{ border: 1px solid #3a2a10; border-radius: 8px; padding: 0 0.75rem; margin-bottom: 0.75rem; }}
+        #your-dates h2, #deadlines-in-the-news h2 {{ color: #f0b25a; }}
+        ul.dates {{ list-style: none; padding-left: 0; }}
+        ul.dates li {{ display: grid; gap: 0.1rem; padding: 0.45rem 0; border-bottom: 1px solid #161616; }}
+        .dwhen {{ font-size: 0.78rem; color: #777; font-variant-numeric: tabular-nums; }}
+        .ditem {{ color: #ddd; }}
+        .dnote {{ font-size: 0.82rem; color: #777; }}
+        li.soon .dwhen {{ color: #f0b25a; font-weight: 600; }}
+        li.overdue .dwhen {{ color: #d1603a; font-weight: 600; }}
+        li.later .ditem {{ color: #aaa; }}
         details.story {{ margin: 0.15rem 0; border-left: 2px solid #1f1f1f; padding-left: 0.6rem; }}
         details.story[open] {{ border-left-color: #e8734a; }}
         details.story > summary {{ padding: 0.35rem 0; font-size: 0.95rem; color: #ccc; line-height: 1.55; }}
@@ -915,7 +1035,7 @@ def build_html(digest_content, newsletters, rss_articles, tldr_articles):
         const b = document.getElementById('expand-all');
         if (b) b.addEventListener('click', () => {{
             const open = b.textContent === 'Expand all';
-            document.querySelectorAll('details').forEach((d, i) => {{ d.open = open || d.id === 'todays-briefing' || d.id === 'dates-that-affect-you'; }});
+            document.querySelectorAll('details').forEach((d, i) => {{ d.open = open || ['todays-briefing', 'deadlines-in-the-news'].includes(d.id); }});
             b.textContent = open ? 'Collapse all' : 'Expand all';
         }});
     </script>
@@ -954,6 +1074,8 @@ def previous_digest_text():
             page = f.read()
     except OSError:
         return ""
+    if 'id="lock"' in page:
+        page = decrypt_page(page, os.environ.get("DIGEST_PASSWORD", ""))
     m = re.search(r"<main>(.*?)</main>", page, re.DOTALL)
     body = quick_part(m.group(1)) if m else ""
     return strip_html(body)[:8000]
@@ -962,7 +1084,7 @@ def previous_digest_text():
 def main():
     os.makedirs(OUT_DIR, exist_ok=True)
 
-    if digest_already_current():
+    if digest_already_current() and not os.environ.get("FORCE_DIGEST"):
         print("digest.html already current for today (UTC) - skipping regeneration")
         return
 
@@ -978,7 +1100,13 @@ def main():
     print("\nGenerating AI summary...")
     digest_content = summarize(newsletters, rss_articles, tldr_articles, previous_digest_text())
 
-    page = build_html(digest_content, newsletters, rss_articles, tldr_articles)
+    password = os.environ.get("DIGEST_PASSWORD", "")
+    # Personal dates only ever go into an encrypted page; without a password the page
+    # is published as before, with the yearly dates only.
+    page = build_html(digest_content, newsletters, rss_articles, tldr_articles, render_your_dates(bool(password)))
+    if password:
+        title = re.search(r"<title>(.*?)</title>", page).group(1)
+        page = encrypt_page(page, password, title)
     output_path = os.path.join(OUT_DIR, "digest.html")
     with open(output_path, "w", encoding="utf-8") as f:
         f.write(page)

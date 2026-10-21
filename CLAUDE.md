@@ -28,7 +28,10 @@ If a *third* source starts failing, escalate regardless.
 
 ## Page layout (since 2026-10-21)
 
-- **Dates That Affect You** (only when something qualifies): official deadlines from the news plus `FIXED_DEADLINES` (yearly tax dates, shown 30-45 days ahead). General dates only: the site is public, so his personal deadlines live in the private dotfiles memory (`reference_personal_deadlines.md`), never here.
+- **The digest page is password-locked** (since 2026-10-21): `encrypt_page()` AES-GCM-encrypts the finished page with `DIGEST_PASSWORD` (repo secret he set himself; PBKDF2 600k, fixed salt so a device's remembered key opens every day's page). The published `digest.html` is a small unlock form that keeps the plain `<title>Daily Digest — date</title>` for the skip check; `previous_digest_text()` decrypts yesterday's page. The feeds (`feed.xml`, `caravan.xml`, category feeds) stay public.
+- **Your Dates** (folded by default, his choice): `PERSONAL_DATES` repo secret (synced from his private dotfiles memory note by `deadlines.sh` in `/update`) plus the yearly `FIXED_DEADLINES`, all upcoming, sorted, amber within 30 days, red when overdue. 🚨 Personal dates render **only when `DIGEST_PASSWORD` is set** — without it the page publishes unencrypted with the yearly dates only. Never weaken that guard.
+- **Deadlines in the News** (only when something qualifies): official deadlines from the day's news that an individual in Tamil Nadu must act on.
+- **Rebuild today's digest now:** Actions → Generate RSS Feed → Run workflow with `force_digest` ticked (or `gh workflow run "Generate RSS Feed" -f force_digest=true`).
 - **Today's Briefing**: summary paragraph + 8-12 `<details class="story">` items: one line closed, deeper write-up open. Top Stories was merged into it. Each story is tagged New or Update against yesterday's digest (`previous_digest_text()` reads the curled live page before it's overwritten).
 - India / World / Tech use the same story items; TLDR Highlights and Also Worth Reading stay lists. Badges show story count and reading time (quick vs in full); "Expand all" opens everything.
 - Balance rules in the prompt: no outlet more than 3 items per section, every news-carrying newsletter contributes, The Wire is preferred as the cited source (his favourite), world news reaches beyond the US/Europe.

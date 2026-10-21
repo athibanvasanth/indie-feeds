@@ -8,6 +8,11 @@ on:
     # itself skips the expensive part once today's digest already exists.
     - cron: "0 * * * *"
   workflow_dispatch:
+    inputs:
+      force_digest:
+        description: "Rebuild today's digest even if it already exists"
+        type: boolean
+        default: false
   push:
     branches: [main]
     paths-ignore:
@@ -71,7 +76,7 @@ jobs:
       - name: Does today's digest need generating?
         id: digest
         continue-on-error: true
-        run: python -c "import generate_digest as g; print('needed=' + ('false' if g.digest_already_current() else 'true'))" >> "$GITHUB_OUTPUT"
+        run: python -c "import generate_digest as g; print('needed=' + ('false' if g.digest_already_current() and '${{ inputs.force_digest }}' != 'true' else 'true'))" >> "$GITHUB_OUTPUT"
 
       - name: Install Claude Code CLI
         if: steps.digest.outputs.needed != 'false'
@@ -86,6 +91,10 @@ jobs:
         run: python generate_digest.py
         env:
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # Page is encrypted with this; personal dates are only included when it is set.
+          DIGEST_PASSWORD: ${{ secrets.DIGEST_PASSWORD }}
+          PERSONAL_DATES: ${{ secrets.PERSONAL_DATES }}
+          FORCE_DIGEST: ${{ inputs.force_digest && '1' || '' }}
 
       - uses: actions/upload-pages-artifact@v4
         with:
