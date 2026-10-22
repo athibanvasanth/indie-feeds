@@ -17,7 +17,7 @@ OUT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "public")
 # Claude Sonnet 5, via the Claude Code CLI in print mode — billed against the
 # user's own Claude subscription (CLAUDE_CODE_OAUTH_TOKEN), not metered API usage.
 # Was opencode Zen's free-tier Muse Spark 1.2 (before that, DeepSeek V4 Flash).
-CLAUDE_MODEL = "claude-sonnet-5"
+CLAUDE_MODEL = "claude-opus-5-5"
 
 # Newsletters via kill-the-newsletter: full email HTML with embedded articles
 NEWSLETTER_FEEDS = [
@@ -546,7 +546,7 @@ def generate_with_retry(prompt):
                 input=prompt,
                 capture_output=True,
                 text=True,
-                timeout=300,  # 300s — long prompt + long output can take minutes; 90s timed out before
+                timeout=480,  # Opus writes slower than Sonnet; 300s was the Sonnet limit, 90s timed out before
             )
             if r.returncode != 0:
                 raise RuntimeError(f"claude CLI exit {r.returncode} (prompt {len(prompt)} chars): stderr={r.stderr.strip()[:400]!r} stdout={r.stdout.strip()[:400]!r}")
@@ -824,6 +824,7 @@ const b64 = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
 async function open(raw) {
   const key = await crypto.subtle.importKey('raw', raw, 'AES-GCM', false, ['decrypt']);
   const pt = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: b64(f.dataset.iv) }, key, b64(f.dataset.ct));
+  if (document.readyState !== 'complete') await new Promise(r => addEventListener('load', r, { once: true }));
   document.open(); document.write(new TextDecoder().decode(pt)); document.close();
 }
 async function derive(pw) {

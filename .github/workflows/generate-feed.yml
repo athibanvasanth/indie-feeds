@@ -30,7 +30,7 @@ concurrency:
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 40
     env:
       PYTHONUNBUFFERED: "1"  # real per-line timestamps in the logs (output was flushed only at exit)
     environment:
