@@ -24,7 +24,7 @@ So: no `contents: write`, no auto-commits, no `keepalive-workflow` — don't re-
 
 **Real failure:** `Scroll Newsletter ✗`. Substack 403s GitHub Actions' IP range directly (clean from a residential IP), so Scroll goes through a converter that fetches from its own host. Route ladder, tried in order by `fetch_feed_any()`: **feed2json.org** (JSON Feed, since 2026-10-21) → rss2json (since `7c1f1ba`; from 2026-10-21 it answers every request with a Cloudflare "Just a moment" 403) → Substack direct. A `✗` means every route failed — **a genuine regression, flag it**; the run log shows which route failed and why.
 
-**The Indian Express** 403s GitHub Actions' IPs (whole site). Since 2026-10-23 it comes through **Google News** (`site:indianexpress.com/article/india when:1d`), with the direct feed as fallback; Google's links are redirects, so it carries `no_body` (headline + summary only) and `strip` for Google's " - The Indian Express" title suffix. feed2json can't parse its feed and rss2json is Cloudflare-walled, so don't retry those.
+**The Indian Express** 403s GitHub Actions' IPs (whole site). Since 2026-10-23 it comes through **Bing News RSS** (`site:indianexpress.com/article/india`; its click-redirect links are unwrapped to the real article URL), then Google News (which 503s Actions' IPs), then the direct feed. It carries `no_body` (the site still 403s, so headline + summary only) and `strip` for Google's " - The Indian Express" title suffix. feed2json can't parse its feed and rss2json is Cloudflare-walled, so don't retry those.
 
 If a *third* source starts failing, escalate regardless.
 
