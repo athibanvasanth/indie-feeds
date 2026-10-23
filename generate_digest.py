@@ -48,7 +48,12 @@ RSS_FEEDS = [
     # India
     {"name": "The Hindu - Coimbatore", "url": "https://www.thehindu.com/news/cities/Coimbatore/feeder/default.rss", "max": 3},
     {"name": "The News Minute", "url": "https://www.thenewsminute.com/feed", "max": 6},
-    {"name": "The Indian Express", "url": "https://indianexpress.com/section/india/feed/", "max": 6},
+    # Indian Express 403s GitHub Actions' IPs (whole site, so its WordPress API too) and
+    # feed2json can't parse its feed, so Google News lists its India stories from Google's
+    # host (2026-10-23). Links are Google redirects, so no body fetch: headline + summary.
+    {"name": "The Indian Express", "max": 6, "no_body": True, "strip": " - The Indian Express",
+     "url": "https://news.google.com/rss/search?q=site:indianexpress.com/article/india+when:1d&hl=en-IN&gl=IN&ceid=IN:en",
+     "fallbacks": ["https://indianexpress.com/section/india/feed/"]},
     # The Wire's articles from this repo's own feed (generate_feed.py), on top of its daily
     # newsletter - he reads The Wire most and wants it well represented.
     {"name": "The Wire", "url": "https://athibanvasanth.github.io/indie-feeds/feed.xml", "max": 6},
@@ -369,7 +374,7 @@ def fetch_rss_articles():
         count = 0
         raw = 0
         try:
-            feed = fetch_feed(feed_info["url"])
+            feed = fetch_feed_any(feed_info)
             raw = len(feed.entries)
             fresh = []
             for entry in feed.entries[:feed_info.get("max", 10)]:
@@ -388,7 +393,7 @@ def fetch_rss_articles():
             bodies = {}
             links_to_fetch = list(dict.fromkeys(
                 e.get("link", "") for e in fresh
-                if e.get("link", "")
+                if e.get("link", "") and not feed_info.get("no_body")
             ))
             if links_to_fetch:
                 with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
@@ -396,7 +401,7 @@ def fetch_rss_articles():
                         bodies[link] = body
 
             for entry in fresh:
-                title = entry.get("title", "Untitled")
+                title = entry.get("title", "Untitled").removesuffix(feed_info.get("strip", ""))
                 link = entry.get("link", "")
                 summary = entry.get("summary", "")
                 # For RSS feeds, try to use the fetched article content
