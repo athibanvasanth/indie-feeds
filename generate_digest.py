@@ -780,13 +780,13 @@ def lock_key(password):
     return hashlib.pbkdf2_hmac("sha256", password.encode(), LOCK_SALT, LOCK_ITER, 32)
 
 
-def encrypt_page(page, password, title):
+def encrypt_page(page, password, title, health=""):
     from cryptography.hazmat.primitives.ciphers.aead import AESGCM
     iv = os.urandom(12)
     ct = AESGCM(lock_key(password)).encrypt(iv, page.encode("utf-8"), None)
     b64 = lambda x: base64.b64encode(x).decode()
     return LOCK_TEMPLATE.replace("{TITLE}", html_mod.escape(title)).replace("{SALT}", b64(LOCK_SALT)) \
-        .replace("{ITER}", str(LOCK_ITER)).replace("{IV}", b64(iv)).replace("{CT}", b64(ct))
+        .replace("{ITER}", str(LOCK_ITER)).replace("{IV}", b64(iv)).replace("{CT}", b64(ct)).replace("{HEALTH}", health)
 
 
 def decrypt_page(shell, password):
@@ -846,7 +846,7 @@ f.addEventListener('submit', async e => {
     await open(raw);
   } catch (err) { document.getElementById('err').textContent = 'Wrong password. Try again.'; }
 });
-</script></body></html>"""
+</script><div hidden class="health">{HEALTH}</div></body></html>"""
 
 
 def build_html(digest_content, newsletters, rss_articles, tldr_articles, your_dates=""):
@@ -1107,7 +1107,9 @@ def main():
     page = build_html(digest_content, newsletters, rss_articles, tldr_articles, render_your_dates(bool(password)))
     if password:
         title = re.search(r"<title>(.*?)</title>", page).group(1)
-        page = encrypt_page(page, password, title)
+        # Source names and counts only, so /update can see a failing feed without the password.
+        page = encrypt_page(page, password, title, render_health())
+    print("Source health: " + re.sub(r"<[^>]+>", "", render_health()))
     output_path = os.path.join(OUT_DIR, "digest.html")
     with open(output_path, "w", encoding="utf-8") as f:
         f.write(page)
