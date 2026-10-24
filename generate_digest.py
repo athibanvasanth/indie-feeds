@@ -47,7 +47,7 @@ NEWSLETTER_FEEDS = [
 RSS_FEEDS = [
     # India
     {"name": "The Hindu - Coimbatore", "url": "https://www.thehindu.com/news/cities/Coimbatore/feeder/default.rss", "max": 3},
-    {"name": "The News Minute", "url": "https://www.thenewsminute.com/feed", "max": 6},
+    {"name": "The News Minute", "url": "https://www.thenewsminute.com/stories.rss?time-period=last-24-hours", "max": 6},
     # Indian Express 403s GitHub Actions' IPs (whole site, so its WordPress API too) and
     # feed2json can't parse its feed, so a news search lists its India stories from the
     # search engine's host (2026-10-23): Bing first (Google News 503s Actions' IPs), then
