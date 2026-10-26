@@ -111,25 +111,28 @@ def strip_html(text):
 
 
 def extract_links_from_html(html_content):
-    # Only the first 15 links are ever used downstream, so dedupe and cap the
+    # Only the first 25 links are ever used downstream, so dedupe and cap the
     # candidates BEFORE decode_tracking_url — its HEAD requests are the biggest
-    # per-newsletter runtime cost.
+    # per-newsletter runtime cost. Image/logo links (no anchor text) and "View in
+    # browser" are dropped before the cap: they filled 11 of NYT The World's 15 slots
+    # (2026-10-26), so its story links never reached the model.
     seen = set()
     candidates = []
     for match in re.finditer(r'<a[^>]*href="([^"]+)"[^>]*>(.*?)</a>', html_content, re.DOTALL):
         url, anchor = match.groups()
         url = html_mod.unescape(url)
-        if url in seen:
+        anchor = strip_html(anchor).strip()
+        if url in seen or len(anchor) <= 5 or anchor.lower() == 'view in browser':
             continue
         seen.add(url)
-        candidates.append((url, strip_html(anchor).strip()))
-        if len(candidates) == 15:
+        candidates.append((url, anchor))
+        if len(candidates) == 25:
             break
 
     links = []
     for url, anchor in candidates:
         real_url = decode_tracking_url(url)
-        if real_url and anchor and len(anchor) > 5:
+        if real_url:
             links.append({"text": anchor, "url": real_url})
     return links
 
@@ -340,7 +343,7 @@ def fetch_newsletter_content():
                 links = extract_links_from_html(raw_html)
                 link_text = ""
                 if links:
-                    link_items = [f"  - {l['text']}: {l['url']}" for l in links[:15]]
+                    link_items = [f"  - {l['text']}: {l['url']}" for l in links[:25]]
                     link_text = "\nEmbedded links:\n" + "\n".join(link_items)
 
                 all_newsletters.append({
@@ -632,7 +635,7 @@ Create a well-organized HTML digest with these sections in order:
 STORY item format — use exactly this HTML for every story in sections 1-5, one after another (not inside <ul>):
 <details class="story"><summary><span class="tag tag-new">New</span> <strong>Lead-in of 3-6 words</strong> — one sentence with the single key fact.</summary><div class="more"><p>3-4 sentences: what happened, the context, and why it matters.</p><p class="src"><a href="SOURCE_URL">Read the full story</a> <span class="source">(Source name)</span></p></div></details>
 - The tag is either <span class="tag tag-new">New</span> or <span class="tag tag-update">Update</span>. Use Update ONLY when the same ongoing story appears in YESTERDAY'S DIGEST below; then begin the hidden part with <p><strong>What's changed:</strong> one sentence on what is new since yesterday.</p> before the context. Everything else is New.
-- Put the source link in the hidden part; if no URL is available, drop the <a> and keep the source name.
+- EVERY story must have a working source link in the hidden part — the reader wants to open each one. A newsletter essay has no URL of its own: link the newsletter's embedded link that best matches the story (e.g. the article on the same event). Never invent a URL; use only URLs given in the input.
 - The one-line summary must make sense on its own — a reader who opens nothing should still know what happened.
 
 Rules:
@@ -676,7 +679,31 @@ Clarity rules (most important):
         # Don't crash split_sections on it.
         print("  Model returned no text (safety block or max_tokens cut) — digest body will be empty")
         text = ""
-    return sanitize_gemini_html(text)
+    return link_every_story(sanitize_gemini_html(text))
+
+
+def link_every_story(text):
+    # His rule (2026-10-26): every story has a link. When the model found no URL (a
+    # newsletter essay with no matching embedded link), fall back to a news search
+    # for the lead-in + outlet rather than leave the story unlinked.
+    fixed = 0
+    def fix(m):
+        nonlocal fixed
+        block = m.group(0)
+        if re.search(r'<p class="src">\s*<a ', block):
+            return block
+        lead = re.search(r'<strong>(.*?)</strong>', block, re.DOTALL)
+        src = re.search(r'<span class="source">\((.*?)\)</span>', block)
+        q = strip_html(lead.group(1) if lead else '') + (' ' + src.group(1).split(' —')[0] if src else '')
+        a = f'<a href="https://news.google.com/search?q={urllib.parse.quote(q.strip())}">Search for this story</a> '
+        fixed += 1
+        if '<p class="src">' in block:
+            return block.replace('<p class="src">', '<p class="src">' + a, 1)
+        return block.replace('</div></details>', f'<p class="src">{a}</p></div></details>', 1)
+    text = re.sub(r'<details class="story">.*?</details>', fix, text, flags=re.DOTALL)
+    if fixed:
+        print(f"  {fixed} story/stories had no source URL — added a news-search link")
+    return text
 
 
 def render_health():
