@@ -10,6 +10,8 @@ Each generator uses whatever hook that site actually exposes: **The Wire** via i
 
 **Digest generation used to be gated to one exact cron slot (`15 1 * * *`) and GitHub's scheduler silently dropped that slot on ~40% of days (found 2026-09-02, no visible failure — the run just never happened).** Fixed by removing the exact-time gate: every hourly run now reaches `generate_digest.py`, which checks the just-curled live `digest.html`'s title date against today's (UTC) and returns immediately if it's already current — so only the first successful run after UTC midnight does the real (expensive) work. Don't re-add a fixed-time-only gate; it will silently break the same way.
 
+**"Hourly" really means 3–5 runs a day** (GitHub drops the rest; measured 2026-10-27 to 11-23: the first run after UTC midnight came anywhere from 5:38 to 10:07 AM IST). Since 2026-11-24 his laptop fills the gap: `digest-trigger.timer` (dotfiles `linux/scripts/digest-trigger.sh`) checks the live page every 15 min and dispatches this workflow when it isn't today's, at most 3 times a day.
+
 The hourly runs re-serve the existing digest via a "Preserve existing digest" curl step so it never 404s between regenerations.
 
 **This repo is under a GitHub abuse flag: Actions WRITE tokens are blocked.** A workflow requesting `contents: write` fails at Set-up-job with "Repository access blocked". Read-only runs (Pages deploy: `pages:write` + `id-token`, `contents:read`) work fine.
@@ -24,7 +26,7 @@ So: no `contents: write`, no auto-commits, no `keepalive-workflow` — don't re-
 
 **Real failure:** `Scroll Newsletter ✗`. Substack 403s GitHub Actions' IP range directly (clean from a residential IP), so Scroll goes through a converter that fetches from its own host. Route ladder, tried in order by `fetch_feed_any()`: **feed2json.org** (JSON Feed, since 2026-10-21) → rss2json (since `7c1f1ba`; from 2026-10-21 it answers every request with a Cloudflare "Just a moment" 403) → Substack direct. A `✗` means every route failed — **a genuine regression, flag it**; the run log shows which route failed and why.
 
-**The Indian Express** 403s GitHub Actions' IPs (whole site). Since 2026-10-23 it comes through **Bing News RSS** (`site:indianexpress.com/article/india`; its click-redirect links are unwrapped to the real article URL), then Google News (which 503s Actions' IPs), then the direct feed. It carries `no_body` (the site still 403s, so headline + summary only) and `strip` for Google's " - The Indian Express" title suffix. feed2json can't parse its feed and rss2json is Cloudflare-walled, so don't retry those.
+**The Indian Express** 403s GitHub Actions' IPs (whole site). Since 2026-10-23 it comes through **Bing News RSS** (`site:indianexpress.com/article/india`; its click-redirect links are unwrapped to the real article URL), then Google News (which 503s Actions' IPs), then the direct feed. The Bing URL must keep `setmkt=en-IN&cc=IN` and the sort-by-date `qft`: without them US IPs get a US list that is days to months old, which read as a quiet `0` for days (2026-11-24). `fetch_feed_any(…, cutoff)` now also moves to the next route when one answers with nothing new. It carries `no_body` (the site still 403s, so headline + summary only) and `strip` for Google's " - The Indian Express" title suffix. feed2json can't parse its feed and rss2json is Cloudflare-walled, so don't retry those.
 
 If a *third* source starts failing, escalate regardless.
 

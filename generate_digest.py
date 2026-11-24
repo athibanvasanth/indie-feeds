@@ -53,7 +53,9 @@ RSS_FEEDS = [
     # search engine's host (2026-10-23): Bing first (Google News 503s Actions' IPs), then
     # Google, then direct. No body fetch (the site still 403s): headline + summary.
     {"name": "The Indian Express", "max": 6, "no_body": True, "strip": " - The Indian Express",
-     "url": "https://www.bing.com/news/search?q=site%3Aindianexpress.com%2Farticle%2Findia&format=rss",
+     # India market + newest first: GitHub's US IPs otherwise get Bing's US list, all
+     # days to months old, so the source read 0 every day (2026-11-24).
+     "url": "https://www.bing.com/news/search?q=site%3Aindianexpress.com%2Farticle%2Findia&setmkt=en-IN&cc=IN&qft=sortbydate%3d%221%22&format=rss",
      "fallbacks": ["https://news.google.com/rss/search?q=site:indianexpress.com/article/india+when:1d&hl=en-IN&gl=IN&ceid=IN:en",
                    "https://indianexpress.com/section/india/feed/"]},
     # The Wire's articles from this repo's own feed (generate_feed.py), on top of its daily
@@ -224,21 +226,44 @@ def fetch_feed(url, timeout=15, attempts=5):
             delay *= 2
 
 
-def fetch_feed_any(feed_info):
-    # Main url first, then each "fallbacks" entry; re-raises the last error so the
-    # health line still shows ✗ when every route is down.
+def entry_date(entry):
+    parsed = entry.get("published_parsed") or entry.get("updated_parsed")
+    return datetime.datetime(*parsed[:6], tzinfo=datetime.timezone.utc) if parsed else None
+
+
+def fresh_entries(feed, cutoff):
+    # Undated entries count as fresh
+    return [e for e in feed.entries if (d := entry_date(e)) is None or d >= cutoff]
+
+
+def fetch_feed_any(feed_info, cutoff=None):
+    # Main url first, then each "fallbacks" entry; raises the last error when every route
+    # is down, so the health line shows ✗. With a cutoff, a route that answers but holds
+    # nothing newer is passed over too (Indian Express was 0 for days, 2026-11-24).
     urls = [feed_info["url"]] + feed_info.get("fallbacks", [])
-    for i, url in enumerate(urls):
+    stale = error = None
+    for url in urls:
+        host = url.split("/")[2]
         if "feed2json.org" in url:
             # feed2json caches by URL and served a day-old Scroll feed (2026-10-21); a
             # throwaway query on the inner URL forces a fresh fetch.
             url += f"%3Fcb%3D{int(time.time())}"
         try:
-            return fetch_feed(url)
+            feed = fetch_feed(url)
         except Exception as e:
-            if i == len(urls) - 1:
-                raise
-            print(f"    {feed_info['name']}: {url.split('/')[2]} failed ({str(e)[:90]}) — trying next route")
+            error = e
+            if len(urls) > 1:
+                print(f"    {feed_info['name']}: {host} failed ({str(e)[:90]})")
+            continue
+        if cutoff is None or fresh_entries(feed, cutoff):
+            return feed
+        if stale is None or not stale.entries:
+            stale = feed
+        if len(urls) > 1:
+            print(f"    {feed_info['name']}: {host} has nothing new ({len(feed.entries)} entries)")
+    if stale is not None:
+        return stale
+    raise error
 
 
 def jsonfeed_to_rss(payload):
@@ -379,19 +404,9 @@ def fetch_rss_articles():
         count = 0
         raw = 0
         try:
-            feed = fetch_feed_any(feed_info)
+            feed = fetch_feed_any(feed_info, cutoff)
             raw = len(feed.entries)
-            fresh = []
-            for entry in feed.entries[:feed_info.get("max", 10)]:
-                published = None
-                if hasattr(entry, "published_parsed") and entry.published_parsed:
-                    published = datetime.datetime(*entry.published_parsed[:6], tzinfo=datetime.timezone.utc)
-                elif hasattr(entry, "updated_parsed") and entry.updated_parsed:
-                    published = datetime.datetime(*entry.updated_parsed[:6], tzinfo=datetime.timezone.utc)
-
-                if published is not None and published < cutoff:
-                    continue
-                fresh.append(entry)
+            fresh = fresh_entries(feed, cutoff)[:feed_info.get("max", 10)]
 
             # Fetch article bodies in parallel — the serial fetch loop was the
             # digest's biggest runtime cost. pool.map preserves link order.
