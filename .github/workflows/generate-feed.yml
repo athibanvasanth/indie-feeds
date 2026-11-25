@@ -35,7 +35,7 @@ jobs:
       PYTHONUNBUFFERED: "1"  # real per-line timestamps in the logs (output was flushed only at exit)
     environment:
       name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+      url: ${{ steps.deploy1.outputs.page_url || steps.deploy2.outputs.page_url || steps.deploy3.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
 
@@ -100,7 +100,26 @@ jobs:
         with:
           path: public
 
-      - id: deployment
+      # GitHub sometimes doesn't list the artifact for a while after the upload
+      # (actions/deploy-pages#451), so deploy again instead of losing the run. Never
+      # re-upload here: a run with two artifacts can't be deployed.
+      - id: deploy1
+        continue-on-error: true
+        uses: actions/deploy-pages@v4
+
+      - if: steps.deploy1.outcome == 'failure'
+        run: sleep 20
+
+      - id: deploy2
+        if: steps.deploy1.outcome == 'failure'
+        continue-on-error: true
+        uses: actions/deploy-pages@v4
+
+      - if: steps.deploy2.outcome == 'failure'
+        run: sleep 60
+
+      - id: deploy3
+        if: steps.deploy2.outcome == 'failure'
         uses: actions/deploy-pages@v4
 
       # The digest step is continue-on-error so feeds still deploy, but that also hid a

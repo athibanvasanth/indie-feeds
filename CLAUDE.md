@@ -12,6 +12,8 @@ Each generator uses whatever hook that site actually exposes: **The Wire** via i
 
 **"Hourly" really means 3–5 runs a day** (GitHub drops the rest; measured 2026-10-27 to 11-23: the first run after UTC midnight came anywhere from 5:38 to 10:07 AM IST). Since 2026-11-24 his laptop fills the gap: `digest-trigger.timer` (dotfiles `linux/scripts/digest-trigger.sh`) checks the live page every 15 min and dispatches this workflow when it isn't today's, at most 3 times a day.
 
+**"No artifacts named github-pages were found" is GitHub's bug** (`actions/deploy-pages#451`, open; 5 of 12 runs from 2026-11-22 to 25): the upload finishes but the list comes back empty for a while, so the deploy fails and a digest already written in that run is lost. The workflow deploys up to three times (0, +20 s, +60 s) without uploading again: two artifacts in one run can't be deployed, which is also why *Re-run failed jobs* doesn't help (start a new run instead).
+
 The hourly runs re-serve the existing digest via a "Preserve existing digest" curl step so it never 404s between regenerations.
 
 **This repo is under a GitHub abuse flag: Actions WRITE tokens are blocked.** A workflow requesting `contents: write` fails at Set-up-job with "Repository access blocked". Read-only runs (Pages deploy: `pages:write` + `id-token`, `contents:read`) work fine.
