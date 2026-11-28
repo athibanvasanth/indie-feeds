@@ -6,7 +6,9 @@ on:
     # silently dropped by GitHub's scheduler on ~40% of days (found
     # 2026-09-02) - now every hourly run attempts it, and generate_digest.py
     # itself skips the expensive part once today's digest already exists.
-    - cron: "0 * * * *"
+    # Minute 37, not 0: GitHub's scheduler is busiest at the top of the hour
+    # and fired only ~1 in 7 of the ":00" runs (2026-11-21..28, ~3.6/day).
+    - cron: "37 * * * *"
   workflow_dispatch:
     inputs:
       force_digest:

@@ -6,7 +6,7 @@ Each generator uses whatever hook that site actually exposes: **The Wire** via i
 
 ## Traps — read before changing the workflow
 
-**The daily digest lives inside the hourly workflow, not a separate one.** `generate-feed.yml` (named "Generate RSS Feed") runs hourly (`0 * * * *`) and *every* run attempts the digest step — `gh workflow list` shows this workflow plus GitHub's own automatic `Dependency Graph`; there is no separate daily-digest workflow to look for.
+**The daily digest lives inside the hourly workflow, not a separate one.** `generate-feed.yml` (named "Generate RSS Feed") runs hourly at minute 37 (`37 * * * *`; minute 0 got only ~1 in 7 runs fired, 2026-11-28) and *every* run attempts the digest step — `gh workflow list` shows this workflow plus GitHub's own automatic `Dependency Graph`; there is no separate daily-digest workflow to look for.
 
 **Digest generation used to be gated to one exact cron slot (`15 1 * * *`) and GitHub's scheduler silently dropped that slot on ~40% of days (found 2026-09-02, no visible failure — the run just never happened).** Fixed by removing the exact-time gate: every hourly run now reaches `generate_digest.py`, which checks the just-curled live `digest.html`'s title date against today's (UTC) and returns immediately if it's already current — so only the first successful run after UTC midnight does the real (expensive) work. Don't re-add a fixed-time-only gate; it will silently break the same way.
 
